@@ -1,0 +1,31 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" role="img" aria-label="TermCraft: the prompt >_ drawn as a connection — you, a jump host and a server joined by a wire">
+  <defs>
+    <radialGradient id="tc-mark-bg" cx="0.45" cy="0.35" r="0.85">
+      <stop offset="0" stop-color="#2a2825"/>
+      <stop offset="1" stop-color="#1d1c1a"/>
+    </radialGradient>
+    <!-- Printed-paper grain over the whole card. -->
+    <filter id="tc-mark-grain" x="0" y="0" width="100%" height="100%">
+      <feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" seed="3" result="n"/>
+      <feColorMatrix in="n" type="matrix" values="0 0 0 0 1  0 0 0 0 0.96  0 0 0 0 0.88  0 0 0 0.55 -0.18"/>
+    </filter>
+    <filter id="tc-mark-shadow" x="-20%" y="-20%" width="140%" height="150%">
+      <feDropShadow dx="0" dy="16" stdDeviation="20" flood-color="#000" flood-opacity="0.45"/>
+    </filter>
+  </defs>
+  <clipPath id="tc-mark-tile"><rect x="40" y="40" width="944" height="944" rx="200"/></clipPath>
+  <g>
+    <rect x="40" y="40" width="944" height="944" rx="200" fill="url(#tc-mark-bg)"/>
+  </g>
+  <g clip-path="url(#tc-mark-tile)">
+    <g transform="translate(40 40) scale(0.94400)">
+  <path d="M255 262 L600 500" stroke="#e2a93b" stroke-width="124" stroke-linecap="round"/>
+  <path d="M600 500 L255 738" stroke="#2e8b85" stroke-width="124" stroke-linecap="round"/>
+  <circle cx="600" cy="500" r="96.72" fill="#e0532c"/>
+  <circle cx="600" cy="500" r="32.8848" fill="#efe5cf"/>
+  <path d="M685 738 H845" stroke="#efe5cf" stroke-width="124" stroke-linecap="round"/>
+    </g>
+    <rect x="40" y="40" width="944" height="944" filter="url(#tc-mark-grain)" opacity="0.5"/>
+  </g>
+  <rect x="41.5" y="41.5" width="941" height="941" rx="198.5" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="3"/>
+</svg>

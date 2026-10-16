@@ -1,0 +1,26 @@
+name: Bug report
+description: Something isn't working
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: "Security problem? Please **don't** file it here — see [SECURITY.md](../blob/main/SECURITY.md)."
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: TermCraft version and OS
+      placeholder: "0.1.0 on macOS 15 (Apple silicon)"
+    validations:
+      required: true
+  - type: dropdown
+    id: protocol
+    attributes:
+      label: Protocol
+      options: [SSH, Telnet, Serial, SFTP, SCP, VNC, RDP, Local shell, Other]

@@ -1,0 +1,161 @@
+{
+  "name": "termcraft",
+  "productName": "TermCraft",
+  "version": "0.1.0",
+  "description": "Free and open-source terminal and session manager: SSH2, Telnet, Rlogin, Serial, Raw TCP, local shells, SFTP, SCP, VNC and RDP, with tabs, port forwarding, jump hosts, button bars and scripting.",
+  "main": "src/main/main.js",
+  "author": {
+    "name": "Gabriel Moreno",
+    "email": "22067417+figgarden@users.noreply.github.com",
+    "url": "https://github.com/figgarden"
+  },
+  "license": "GPL-2.0-or-later",
+  "scripts": {
+    "start": "electron .",
+    "dev": "electron . --inspect",
+    "rebuild": "electron-rebuild -f",
+    "postinstall": "electron-builder install-app-deps",
+    "test": "node --test test/*.test.js",
+    "dist": "electron-builder",
+    "dist:mac": "electron-builder --mac",
+    "dist:win": "electron-builder --win",
+    "dist:linux": "electron-builder --linux",
+    "icons": "electron scripts/build-icons.js",
+    "notices": "node scripts/third-party-notices.js",
+    "test:e2e": "node scripts/e2e.js",
+    "test:all": "npm test && npm run test:e2e && npm audit --omit=dev"
+  },
+  "dependencies": {
+    "@novnc/novnc": "1.7.0",
+    "@xterm/addon-fit": "^0.11.0",
+    "@xterm/addon-search": "^0.16.0",
+    "@xterm/addon-unicode11": "^0.9.0",
+    "@xterm/addon-web-links": "^0.12.0",
+    "@xterm/xterm": "^6.0.0",
+    "ssh2": "^1.17.0",
+    "ws": "8.22.0"
+  },
+  "optionalDependencies": {
+    "node-pty": "^1.1.0",
+    "serialport": "^13.0.0"
+  },
+  "devDependencies": {
+    "@electron/rebuild": "^4.2.1",
+    "electron": "^44.7.2",
+    "electron-builder": "^26.15.3"
+  },
+  "build": {
+    "appId": "org.termcraft.app",
+    "productName": "TermCraft",
+    "directories": {
+      "output": "dist",
+      "buildResources": "build"
+    },
+    "files": [
+      "LICENSE",
+      "SECURITY.md",
+      "THIRD-PARTY-NOTICES.md",
+      "node_modules/**/*",
+      "package.json",
+      "src/**/*"
+    ],
+    "asarUnpack": [
+      "node_modules/node-pty/**",
+      "node_modules/@serialport/**",
+      "node_modules/cpu-features/**"
+    ],
+    "mac": {
+      "category": "public.app-category.developer-tools",
+      "target": [
+        "dmg",
+        "zip"
+      ],
+      "icon": "build/icon.icns"
+    },
+    "win": {
+      "target": [
+        "nsis",
+        "portable"
+      ],
+      "icon": "build/icon.ico"
+    },
+    "linux": {
+      "target": [
+        "AppImage",
+        "deb",
+        "rpm"
+      ],
+      "category": "Network;TerminalEmulator",
+      "icon": "build/icons",
+      "synopsis": "Free SSH, Telnet and serial terminal",
+      "maintainer": "Gabriel Moreno <22067417+figgarden@users.noreply.github.com>"
+    },
+    "copyright": "Copyright © 2026 Gabriel Moreno and contributors. Licensed under GPL-2.0-or-later.",
+    "nsis": {
+      "license": "LICENSE",
+      "oneClick": false,
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "${productName}-${version}-win-${arch}-setup.${ext}"
+    },
+    "electronFuses": {
+      "runAsNode": false,
+      "enableCookieEncryption": true,
+      "enableNodeOptionsEnvironmentVariable": false,
+      "enableNodeCliInspectArguments": false,
+      "enableEmbeddedAsarIntegrityValidation": true,
+      "onlyLoadAppFromAsar": true,
+      "grantFileProtocolExtraPrivileges": true,
+      "resetAdHocDarwinSignature": true
+    },
+    "extraResources": [
+      {
+        "from": "node_modules/electron/dist/LICENSE",
+        "to": "licenses/LICENSE.electron.txt"
+      },
+      {
+        "from": "node_modules/electron/dist/LICENSES.chromium.html",
+        "to": "licenses/LICENSES.chromium.html"
+      },
+      {
+        "from": "LICENSE",
+        "to": "licenses/LICENSE.termcraft.txt"
+      },
+      {
+        "from": "THIRD-PARTY-NOTICES.md",
+        "to": "licenses/THIRD-PARTY-NOTICES.md"
+      }
+    ],
+    "artifactName": "${productName}-${version}-${os}-${arch}.${ext}",
+    "portable": {
+      "artifactName": "${productName}-${version}-win-${arch}-portable.${ext}"
+    }
+  },
+  "allowScripts": {
+    "node-pty@1.1.0": true,
+    "ssh2@1.17.0": true,
+    "cpu-features@0.0.10": true,
+    "@serialport/bindings-cpp@13.0.0": true,
+    "electron-winstaller@5.4.0": true
+  },
+  "keywords": [
+    "ssh",
+    "terminal",
+    "telnet",
+    "serial",
+    "sftp",
+    "scp",
+    "terminal-emulator",
+    "electron",
+    "session-manager",
+    "vnc",
+    "rdp"
+  ],
+  "homepage": "https://github.com/figgarden/termcraft",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/figgarden/termcraft.git"
+  },
+  "bugs": {
+    "url": "https://github.com/figgarden/termcraft/issues"
+  }
+}
