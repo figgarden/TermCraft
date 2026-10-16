@@ -100,6 +100,16 @@ class App {
     });
     api.xfer.onProgress((tabId, p) => this.tabById(tabId)?.onXfer?.(p));
     api.onMenu((action, arg) => this.dispatch(action, arg));
+    // On macOS ⌘E opens the Command Buffer; Ctrl+Shift+E (the Windows/Linux shortcut) works too.
+    if (this.platform === 'darwin') {
+      document.addEventListener('keydown', (e) => {
+        if (e.ctrlKey && e.shiftKey && !e.metaKey && !e.altKey && e.code === 'KeyE') {
+          e.preventDefault();
+          e.stopPropagation();
+          this.dispatch('toggleCommandWindow');
+        }
+      }, true);
+    }
     api.onRequest((type, payload) => this.onRequest(type, payload));
 
     // The OS switched light/dark (Auto mode): re-apply, keeping any preview that Settings is showing.
@@ -156,6 +166,8 @@ class App {
     });
     this.broadcastBtn = tb(icon('broadcast'), 'Send keystrokes to all tabs', 'toggleBroadcast', { class: 'tb-broadcast' });
     this.logBtn = tb(icon('record'), 'Log session', 'toggleLog');
+    const bufKey = this.platform === 'darwin' ? '⌘E' : 'Ctrl+Shift+E';
+    this.bufferBtn = tb(icon('buffer'), `Command Buffer (${bufKey})`, 'toggleCommandWindow');
     // Session layout switch: tabs, or tile every session on screen at once.
     this.layoutSeg = h('div.segmented', { role: 'radiogroup', 'aria-label': 'Session layout' },
       LAYOUTS.map(([value, label, title]) => h('button', {
@@ -178,6 +190,7 @@ class App {
       tb(icon('search'), 'Find', 'find'),
       this.logBtn,
       tb(icon('play'), 'Run script', 'runScript'),
+      this.bufferBtn,
       this.broadcastBtn,
       h('span.tb-sep'),
       this.layoutSeg,
@@ -610,6 +623,7 @@ class App {
     this.smRail.hidden = !!s.showSessionManager;
     this.buttonBar.hidden = !s.showButtonBar;
     this.buffer.el.hidden = !s.showCommandWindow;
+    this.bufferBtn.classList.toggle('on', !!s.showCommandWindow);
     this.buffer.splitter.hidden = !s.showCommandWindow;
     this.statusBar.hidden = !s.showStatusBar;
     this.fitAll();
