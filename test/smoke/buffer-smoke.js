@@ -26,9 +26,10 @@ module.exports = async function smoke(win, { store }) {
   // Command mode (default): a strip below the terminal.
   await js(`window.termcraft.dispatch('toggleCommandWindow')`);
   await sleep(400);
-  const box = () => js(`(() => { const b = document.querySelector('.command-buffer').getBoundingClientRect(); return { w: Math.round(b.width), h: Math.round(b.height), y: Math.round(b.top) }; })()`).then(JSON.parse);
+  // Sizes are compared with the window, which CI machines may cap below the requested size.
+  const box = () => js(`(() => { const b = document.querySelector('.command-buffer').getBoundingClientRect(); const r = document.querySelector('.work-row').getBoundingClientRect(); return { w: Math.round(b.width), h: Math.round(b.height), y: Math.round(b.top), rowW: Math.round(r.width), rowBottom: Math.round(r.bottom), winH: innerHeight }; })()`).then(JSON.parse);
   let b = await box();
-  check('Command Buffer opens below the terminal, about 7% high', b.h >= 56 && b.h <= 0.12 * 880 + 60 && b.y > 500);
+  check('Command Buffer opens below the terminal, about 7% high', b.h >= 56 && b.h <= 0.12 * b.winH + 60 && b.y >= b.rowBottom - 2);
   await js(`(() => { const e = document.querySelector('.cb-editor'); e.focus(); e.value = 'echo one >> ${log}'; e.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true })); })()`);
   await sleep(500);
   check('Enter sends the command and clears the buffer', lines().join() === 'one' && (await js(`document.querySelector('.cb-editor').value`)) === '');
@@ -39,9 +40,9 @@ module.exports = async function smoke(win, { store }) {
   await js(`[...document.querySelectorAll('.cb-seg button')].find((x) => x.dataset.v === 'script').click()`);
   await sleep(500);
   b = await box();
-  check('Script mode sits beside the terminal, about half the width', b.w > 400 && b.w < 1000 && (await js(`!!document.querySelector('.cb-side .cb-gutter div')`)));
   const termWidth = await js(`document.querySelector('.workspace').getBoundingClientRect().width`);
-  check('the terminal shrinks to share the window', termWidth < 1100);
+  check('Script mode sits beside the terminal, about half the width', Math.abs(b.w - b.rowW / 2) < b.rowW * 0.12 && (await js(`!!document.querySelector('.cb-side .cb-gutter div')`)));
+  check('the terminal shrinks to share the window', termWidth < b.rowW * 0.62);
   const script = [`echo two >> ${log}`, `sleep 1; echo three >> ${log}`, `echo four >> ${log}`, `echo five >> ${log}`].join('\n');
   await js(`(() => { const e = document.querySelector('.cb-editor'); e.value = ${JSON.stringify(script)}; e.dispatchEvent(new Event('input')); e.focus(); e.setSelectionRange(0, 0); e.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', ctrlKey: true, bubbles: true })); })()`);
   await sleep(600);
@@ -66,7 +67,7 @@ module.exports = async function smoke(win, { store }) {
   await js(`[...document.querySelectorAll('.cb-seg button')].find((x) => x.dataset.v === 'bottom').click()`);
   await sleep(500);
   b = await box();
-  check('the script buffer can also sit below the terminal', b.y > 400 && b.w > 1000);
+  check('the script buffer can also sit below the terminal', b.y >= b.rowBottom - 2 && b.w >= b.rowW - 2);
   await sleep(1000);
   check('the buffer text is saved', /sleep 1; echo s7/.test(store.getSettings().bufferText) && store.getSettings().bufferMode === 'script');
   fs.rmSync(dir, { recursive: true, force: true });

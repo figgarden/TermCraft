@@ -30,12 +30,14 @@ module.exports = async function smoke(win) {
   // Make sure the sidebar starts visible, then collapse it with the « button.
   if (!await js(`window.termcraft.settings.showSessionManager`)) await js(`window.termcraft.dispatch('toggleSessionManager')`);
   await sleep(300);
+  const widthOpen = await js(`document.querySelector('.workspace').offsetWidth`);
   await js(`document.querySelector('.sm-collapse').click()`);
   await sleep(500);
   check('sidebar hidden after « click', await js(`document.querySelector('.session-manager').hidden`));
   check('rail visible', await js(`!document.querySelector('.sm-rail').hidden`));
   const widthCollapsed = await js(`document.querySelector('.workspace').offsetWidth`);
-  check(`workspace widened (${widthCollapsed}px)`, widthCollapsed > 1200);
+  // Relative check: CI machines can have screens smaller than the requested window.
+  check(`workspace widened (${widthOpen}px → ${widthCollapsed}px)`, widthCollapsed > widthOpen + 150);
 
   // Stacked layout via the toolbar switch.
   await js(`document.querySelector('.segmented [data-layout="tile-h"]').click()`);
