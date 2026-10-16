@@ -22,6 +22,7 @@ jobs:
           - os: ubuntu-latest
             args: --linux AppImage deb rpm --x64
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
@@ -33,6 +34,7 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y build-essential python3 libudev-dev rpm
       - run: npm ci
       - run: npm test
+        timeout-minutes: 10
       # Electron fetches its runtime lazily; the build bundles its LICENSE and Chromium notices
       # from there, so make sure they exist (and fail rather than ship without them).
       - name: Fetch Electron runtime and check license notices

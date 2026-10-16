@@ -17,6 +17,8 @@ module.exports = async function smoke(win) {
     fs.writeFileSync(path.join(out, name + '.png'), img.toPNG());
     console.log('[smoke] shot', name);
   };
+  const check = (label, ok) => console.log(`[smoke] ${ok ? 'PASS' : 'FAIL'} ${label}`);
+  const modalTitle = () => js(`document.querySelector('.modal-header span')?.textContent || ''`);
   win.setSize(1280, 800);
   await sleep(1200);
   await shot('01-welcome');
@@ -27,8 +29,8 @@ module.exports = async function smoke(win) {
   await js(`window.termcraft.active.send("echo 'hello from TermCraft: build OK, 0 errors, warning none'\\r")`);
   await sleep(800);
   const screen = await js(`window.termcraft.active.screenLines().join('\\n')`);
-  console.log('[smoke] screen contains hello:', screen.includes('hello from TermCraft'));
-  console.log('[smoke] state:', await js(`window.termcraft.active.state`));
+  check('local shell echoes typed text', screen.includes('hello from TermCraft'));
+  check('local shell tab is connected', (await js(`window.termcraft.active.state`)) === 'connected');
   await shot('02-local-shell');
 
   // Second tab + tiling.
@@ -36,34 +38,41 @@ module.exports = async function smoke(win) {
   await sleep(1200);
   await js(`window.termcraft.setLayout('tile-v')`);
   await sleep(600);
+  check('two tabs open', (await js(`window.termcraft.tabs.length`)) === 2);
+  check('tiled layout shows both panes', (await js(`[...document.querySelectorAll('.pane')].filter((p) => p.offsetWidth > 0).length`)) === 2);
   await shot('03-tiled');
   await js(`window.termcraft.setLayout('tabs')`);
 
   // Session editor.
   await js(`void window.termcraft.sm.newSession('')`);
   await sleep(500);
+  check('session editor opens', !!(await js(`!!document.querySelector('.cat[data-cat="Port Forwarding"]')`)));
   await shot('04-session-editor');
   await js(`document.querySelector('.cat[data-cat="Port Forwarding"]').click()`);
   await sleep(300);
   await shot('05-port-forwarding');
   await js(`document.querySelector('.modal-footer button').click()`);
   await sleep(300);
+  check('session editor closes', !(await js(`!!document.querySelector('.modal-footer')`)));
 
   // Quick connect + global options.
   await js(`void window.termcraft.dispatch('quickConnect')`);
   await sleep(400);
+  check('quick connect opens', /connect/i.test(await modalTitle()));
   await shot('06-quick-connect');
   await js(`document.querySelector('.modal-footer button').click()`);
   await js(`void window.termcraft.dispatch('globalOptions')`);
   await sleep(400);
   await js(`document.querySelector('.cat[data-cat="Keyword Highlighting"]').click()`);
   await sleep(300);
+  check('global options opens', /option/i.test(await modalTitle()));
   await shot('07-global-options');
   await js(`document.querySelector('.modal-footer button').click()`);
 
   // Light theme.
   await js(`window.termcraft.saveSettings({ theme: 'light', showCommandWindow: true })`);
   await sleep(600);
+  check('light theme applies', (await js(`document.documentElement.dataset.theme`)) === 'light');
   await shot('08-light-theme');
   await js(`window.termcraft.saveSettings({ theme: 'dark', showCommandWindow: false })`);
   await sleep(300);
