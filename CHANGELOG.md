@@ -2,6 +2,11 @@
 
 All notable changes to TermCraft are documented here. This project uses [Semantic Versioning](https://semver.org/).
 
+## [0.1.1] — 2026-10-15
+
+### Fixed
+- macOS builds now include the Electron and Chromium license notices (`Contents/Resources/licenses/`), which were missing from 0.1.0 on macOS. The release pipeline now fails if any license notice is missing.
+
 ## [0.1.0] — 2026-10-15
 
 First public release.

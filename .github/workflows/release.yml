@@ -33,10 +33,26 @@ jobs:
         run: sudo apt-get update && sudo apt-get install -y build-essential python3 libudev-dev rpm
       - run: npm ci
       - run: npm test
+      # Electron fetches its runtime lazily; the build bundles its LICENSE and Chromium notices
+      # from there, so make sure they exist (and fail rather than ship without them).
+      - name: Fetch Electron runtime and check license notices
+        shell: bash
+        run: |
+          node node_modules/electron/install.js
+          test -f node_modules/electron/dist/LICENSE
+          test -f node_modules/electron/dist/LICENSES.chromium.html
       - name: Build installers
         run: npx electron-builder ${{ matrix.args }} --publish never
         env:
           CSC_IDENTITY_AUTO_DISCOVERY: false
+      - name: Check bundled license notices
+        shell: bash
+        run: |
+          missing=0
+          for f in LICENSE.electron.txt LICENSES.chromium.html LICENSE.termcraft.txt THIRD-PARTY-NOTICES.md; do
+            if ! find dist -path "*licenses/$f" -print -quit | grep -q .; then echo "missing $f"; missing=1; fi
+          done
+          exit $missing
       - uses: actions/upload-artifact@v4
         with:
           name: installers-${{ runner.os }}
