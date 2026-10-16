@@ -274,7 +274,7 @@ function registerIpc() {
 
   handle('store:export', async (includeSecrets) => {
     const { canceled, filePath } = await dialog.showSaveDialog(win, {
-      title: 'Export Sessions', defaultPath: 'termcraft-sessions.json', filters: [{ name: 'JSON', extensions: ['json'] }],
+      title: 'Export Sessions', defaultPath: 'TermCraft-sessions.json', filters: [{ name: 'JSON', extensions: ['json'] }],
     });
     if (canceled) return null;
     fs.writeFileSync(filePath, JSON.stringify(store.exportSessions(includeSecrets), null, 2), { mode: 0o600 });

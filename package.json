@@ -120,7 +120,7 @@
       },
       {
         "from": "LICENSE",
-        "to": "licenses/LICENSE.termcraft.txt"
+        "to": "licenses/LICENSE.TermCraft.txt"
       },
       {
         "from": "THIRD-PARTY-NOTICES.md",
@@ -152,12 +152,12 @@
     "vnc",
     "rdp"
   ],
-  "homepage": "https://github.com/figgarden/termcraft",
+  "homepage": "https://github.com/figgarden/TermCraft",
   "repository": {
     "type": "git",
-    "url": "https://github.com/figgarden/termcraft.git"
+    "url": "https://github.com/figgarden/TermCraft.git"
   },
   "bugs": {
-    "url": "https://github.com/figgarden/termcraft/issues"
+    "url": "https://github.com/figgarden/TermCraft/issues"
   }
 }

@@ -3,8 +3,8 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/figgarden/termcraft/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/figgarden/termcraft/actions/workflows/ci.yml/badge.svg"></a>
-  <a href="https://github.com/figgarden/termcraft/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/figgarden/termcraft?color=e0532c"></a>
+  <a href="https://github.com/figgarden/TermCraft/actions/workflows/ci.yml"><img alt="CI" src="https://github.com/figgarden/TermCraft/actions/workflows/ci.yml/badge.svg"></a>
+  <a href="https://github.com/figgarden/TermCraft/releases/latest"><img alt="Latest release" src="https://img.shields.io/github/v/release/figgarden/TermCraft?color=e0532c"></a>
   <a href="LICENSE"><img alt="License: GPL-2.0-or-later" src="https://img.shields.io/badge/license-GPL--2.0--or--later-2e8b85"></a>
   <img alt="Platforms" src="https://img.shields.io/badge/platforms-macOS%20%7C%20Windows%20%7C%20Linux-e2a93b">
 </p>
@@ -17,7 +17,7 @@
 
 ## Download
 
-Get the latest version from **[Releases](https://github.com/figgarden/termcraft/releases/latest)**:
+Get the latest version from **[Releases](https://github.com/figgarden/TermCraft/releases/latest)**:
 
 | Platform | File |
 |---|---|

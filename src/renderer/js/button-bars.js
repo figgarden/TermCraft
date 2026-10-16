@@ -297,7 +297,7 @@ export class ButtonBars {
   }
 
   async exportBars(bars) {
-    const name = bars.length === 1 ? `${bars[0].name.replace(/[^\w.-]+/g, '-')}.buttonbar.json` : 'termcraft-button-bars.json';
+    const name = bars.length === 1 ? `${bars[0].name.replace(/[^\w.-]+/g, '-')}.buttonbar.json` : 'TermCraft-button-bars.json';
     const file = await window.api.file.saveText(name, JSON.stringify({ format: 'termcraft-buttonbars', version: 1, bars }, null, 2));
     if (file) toast(`Exported to ${file}`);
   }

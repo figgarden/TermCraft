@@ -51,7 +51,7 @@ jobs:
         shell: bash
         run: |
           missing=0
-          for f in LICENSE.electron.txt LICENSES.chromium.html LICENSE.termcraft.txt THIRD-PARTY-NOTICES.md; do
+          for f in LICENSE.electron.txt LICENSES.chromium.html LICENSE.TermCraft.txt THIRD-PARTY-NOTICES.md; do
             if ! find dist -path "*licenses/$f" -print -quit | grep -q .; then echo "missing $f"; missing=1; fi
           done
           exit $missing

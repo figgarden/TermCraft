@@ -23,6 +23,6 @@ for (const name of names.split(",").map((s) => s.trim()).filter(Boolean)) {
     results.push(`### ${name}\nERROR: ${e.message}\n`);
   }
 }
-const file = path.join(os.homedir(), `termcraft-multi-${Date.now()}.txt`);
+const file = path.join(os.homedir(), `TermCraft-multi-${Date.now()}.txt`);
 fs.writeFileSync(file, results.join("\n"));
 await tc.Dialog.MessageBox(`Saved results to ${file}`);

@@ -99,13 +99,13 @@ function markSvg() {
 </svg>`;
 }
 
-/** README banner: the mark and a lowercase geometric wordmark on charcoal. */
+/** README banner: the mark and a geometric wordmark on charcoal. */
 function bannerSvg() {
   const id = 'tc-banner';
-  return `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400" role="img" aria-label="termcraft — a craft for the command line">${defs(id)}
+  return `<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400" role="img" aria-label="TermCraft — a craft for the command line">${defs(id)}
   <rect width="1280" height="400" fill="url(#${id}-bg)"/>
   ${tile(id, 110, 80, 240, 54, false, true)}
-  <text x="420" y="214" font-family="${SANS}" font-size="104" font-weight="600" letter-spacing="-1" fill="${C.cream}">term<tspan fill="${C.vermilion}">craft</tspan></text>
+  <text x="420" y="214" font-family="${SANS}" font-size="104" font-weight="600" letter-spacing="-1" fill="${C.cream}">Term<tspan fill="${C.vermilion}">Craft</tspan></text>
   <path d="M429 249 H483" stroke="${C.teal}" stroke-width="10" stroke-linecap="round"/>
   <text x="506" y="254" font-family="${SANS}" font-size="22" letter-spacing="4" fill="${C.mustard}">A CRAFT FOR THE COMMAND LINE</text>
   ${[[C.mustard, 'you'], [C.vermilion, 'jump host'], [C.teal, 'server']].map(([c, t], i) => {

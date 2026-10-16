@@ -1,4 +1,4 @@
-<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400" role="img" aria-label="termcraft — a craft for the command line">
+<svg xmlns="http://www.w3.org/2000/svg" width="1280" height="400" viewBox="0 0 1280 400" role="img" aria-label="TermCraft — a craft for the command line">
   <defs>
     <radialGradient id="tc-banner-bg" cx="0.45" cy="0.35" r="0.85">
       <stop offset="0" stop-color="#2a2825"/>
@@ -30,7 +30,7 @@
     <rect x="110" y="80" width="240" height="240" filter="url(#tc-banner-grain)" opacity="0.5"/>
   </g>
   <rect x="111.5" y="81.5" width="237" height="237" rx="52.5" fill="none" stroke="#ffffff" stroke-opacity="0.08" stroke-width="3"/>
-  <text x="420" y="214" font-family="Futura, 'Futura PT', 'Avenir Next', 'Century Gothic', 'Helvetica Neue', Arial, sans-serif" font-size="104" font-weight="600" letter-spacing="-1" fill="#efe5cf">term<tspan fill="#e0532c">craft</tspan></text>
+  <text x="420" y="214" font-family="Futura, 'Futura PT', 'Avenir Next', 'Century Gothic', 'Helvetica Neue', Arial, sans-serif" font-size="104" font-weight="600" letter-spacing="-1" fill="#efe5cf">Term<tspan fill="#e0532c">Craft</tspan></text>
   <path d="M429 249 H483" stroke="#2e8b85" stroke-width="10" stroke-linecap="round"/>
   <text x="506" y="254" font-family="Futura, 'Futura PT', 'Avenir Next', 'Century Gothic', 'Helvetica Neue', Arial, sans-serif" font-size="22" letter-spacing="4" fill="#e2a93b">A CRAFT FOR THE COMMAND LINE</text>
   <circle cx="432" cy="306" r="11" fill="#e2a93b"/><text x="454" y="314" font-family="Futura, 'Futura PT', 'Avenir Next', 'Century Gothic', 'Helvetica Neue', Arial, sans-serif" font-size="22" fill="#efe5cf" opacity="0.85">you</text><circle cx="542" cy="306" r="11" fill="#e0532c"/><text x="564" y="314" font-family="Futura, 'Futura PT', 'Avenir Next', 'Century Gothic', 'Helvetica Neue', Arial, sans-serif" font-size="22" fill="#efe5cf" opacity="0.85">jump host</text><circle cx="744" cy="306" r="11" fill="#2e8b85"/><text x="766" y="314" font-family="Futura, 'Futura PT', 'Avenir Next', 'Century Gothic', 'Helvetica Neue', Arial, sans-serif" font-size="22" fill="#efe5cf" opacity="0.85">server</text>

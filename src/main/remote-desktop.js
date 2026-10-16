@@ -197,7 +197,7 @@ class RdpService {
   constructor(deps) {
     this.deps = deps;
     this.sessions = new Map(); // tabId -> { server, route, child, file }
-    this.dir = path.join(os.tmpdir(), 'termcraft-rdp');
+    this.dir = path.join(os.tmpdir(), 'TermCraft-rdp');
   }
 
   /** Open the tunnel (if any) and launch the RDP client. */
