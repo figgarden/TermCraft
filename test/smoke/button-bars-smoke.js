@@ -46,7 +46,7 @@ module.exports = async function smoke(win, { store }) {
   await js(`(() => {
     const m = document.querySelector('.modal');
     const label = m.querySelector('input[aria-label=Label]'); label.value = 'Who'; label.dispatchEvent(new Event('input'));
-    m.querySelector('textarea[aria-label="String to send"]').value = 'echo I am $(whoami)\\\\r';
+    m.querySelector('textarea[aria-label="String to send"]').value = 'echo termcraft-button-ok\\\\r';
     const c = m.querySelector('select[aria-label=Color]'); c.value = 'green'; c.dispatchEvent(new Event('change'));
     m.querySelector('input[aria-label=Tooltip]').value = 'Prints the current user';
   })()`);
@@ -59,7 +59,7 @@ module.exports = async function smoke(win, { store }) {
   await js(`document.querySelector('.bb-buttons .bb').click()`);
   await sleep(800);
   // Match the command's output line, not the echoed command itself.
-  check('button sent its command', /^I am \w+\s*$/m.test(await screen()));
+  check('button sent its command', /^termcraft-button-ok\s*$/m.test(await screen()));
 
   // A ${prompt:} button asks for a value, then sends it.
   await js(`window.termcraft.buttons.save([...window.termcraft.settings.buttonBars.map((b) => b.id === window.termcraft.buttons.current.id ? { ...b, buttons: [...b.buttons, { label: 'Greet…', action: 'send', value: 'echo hello \${prompt:Name}\\\\r', color: 'blue' }] } : b)])`);

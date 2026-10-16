@@ -15,8 +15,9 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 module.exports = async function smoke(win) {
   const js = (code) => win.webContents.executeJavaScript(`Promise.resolve(${code}).then((r) => (r && typeof r === 'object' ? JSON.stringify(r) : r))`);
   const check = (label, ok) => console.log(`[smoke] ${ok ? 'PASS' : 'FAIL'} ${label}`);
-  const rz = spawnSync('/bin/sh', ['-c', 'command -v rz || ls /opt/homebrew/bin/rz /usr/local/bin/rz /usr/bin/rz 2>/dev/null | head -1'], { encoding: 'utf8' }).stdout.trim().split('\n')[0];
-  if (!rz || process.platform === 'win32') { console.log('[smoke] PASS skipped: lrzsz not installed'); return; }
+  if (process.platform === 'win32') { console.log('[smoke] PASS skipped on Windows (rz/sz are Unix tools)'); return; }
+  const rz = (spawnSync('/bin/sh', ['-c', 'command -v rz || ls /opt/homebrew/bin/rz /usr/local/bin/rz /usr/bin/rz 2>/dev/null | head -1'], { encoding: 'utf8' }).stdout || '').trim().split('\n')[0];
+  if (!rz) { console.log('[smoke] PASS skipped: lrzsz not installed'); return; }
   const binDir = path.dirname(rz);
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'termcraft-zm-'));
   const src = path.join(dir, 'src');

@@ -32,7 +32,9 @@ function runSuite(suite) {
   const fails = out.split('\n').filter((l) => /\[smoke\] (FAIL|Error|\[)/.test(l));
   if (res.error) fails.push(`suite did not finish: ${res.error.message}`);
   if (!pass && !fails.length) fails.push(`suite produced no results (exit ${res.status}): ${out.trim().split('\n').slice(-3).join(' | ')}`);
-  return { pass, fails };
+  // On CI, keep the end of the output of a failing suite in the log so it can be diagnosed.
+  const tail = fails.length && process.env.CI ? out.split('\n').filter((l) => l.trim()).slice(-25).map((l) => `      | ${l.slice(0, 400)}`) : [];
+  return { pass, fails, tail };
 }
 
 const flaky = [];
@@ -46,6 +48,7 @@ for (const suite of suites) {
   }
   console.log(`${r.fails.length ? '✖' : '✔'} ${name}: ${r.pass} passed${r.fails.length ? `, ${r.fails.length} failed` : ''}`);
   for (const f of r.fails) console.log(`    ${f.trim()}`);
+  if (r.tail.length) console.log(`    output tail:\n${r.tail.join('\n')}`);
   failed += r.fails.length;
 }
 if (flaky.length) console.log(`\n⚠ Flaky (failed once, passed on retry):\n  ${flaky.join('\n  ')}`);

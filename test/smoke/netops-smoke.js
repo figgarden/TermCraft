@@ -107,7 +107,7 @@ module.exports = async function smoke(win) {
   await js(`void window.termcraft.openBatch({ sessionIds: window.termcraft.tree.sessions.filter((s) => s.parent && s.name.startsWith('lab-')).map((s) => s.id), commands: ['show version', 'show clock'], concurrency: 2, timeoutSec: 10, outputDir: ${JSON.stringify(chosen)} })`);
   for (let i = 0; i < 200 && (await js(`window.termcraft.active.state`)) === 'connecting'; i++) await sleep(100);
   const runDir = fs.readdirSync(outRoot).map((d) => path.join(outRoot, d))[0];
-  const out = runDir && fs.existsSync(path.join(runDir, 'lab-sw1.txt')) ? fs.readFileSync(path.join(runDir, 'lab-sw1.txt'), 'utf8') : '';
+  const out = runDir && fs.existsSync(path.join(runDir, 'lab-sw1.txt')) ? fs.readFileSync(path.join(runDir, 'lab-sw1.txt'), 'utf8').replace(/\r\n/g, '\n') : '';
   check('batch output saved per device, pager answered', /lab-sw1# show version\nCisco IOS Software, C2960 \(fake\)\n.*uptime is 3 weeks/s.test(out) && /lab-sw1# show clock\n% output of show clock/.test(out));
   check('batch reports the unreachable device as failed', /Done.*Failed|Failed.*Done/s.test(await js(`[...document.querySelectorAll('.scp-table td.status')].map((x) => x.textContent).join(' ')`)));
   check('batch never writes the password to the output', !out.includes('S3cret'));

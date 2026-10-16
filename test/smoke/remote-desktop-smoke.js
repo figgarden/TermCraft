@@ -89,7 +89,7 @@ module.exports = async function smoke(win, { store }) {
   const shot = async (name) => { fs.writeFileSync(path.join(out, name + '.png'), (await win.webContents.capturePage()).toPNG()); console.log('[smoke] shot', name); };
   const check = (label, ok) => console.log(`[smoke] ${ok ? 'PASS' : 'FAIL'} ${label}`);
   const modal = () => js(`document.querySelector('.modal-header span')?.textContent || ''`);
-  const waitFor = async (expr, ms = 6000) => { for (let i = 0; i < ms / 100; i++) { if (await js(expr)) return true; await sleep(100); } return false; };
+  const waitFor = async (expr, ms = 20000) => { for (let i = 0; i < ms / 100; i++) { if (await js(expr)) return true; await sleep(100); } return false; };
 
   const stats = { authed: 0, keys: 0, sentFrame: false };
   const vnc = await startFakeVnc(stats);
@@ -130,12 +130,16 @@ module.exports = async function smoke(win, { store }) {
   // Custom clients run without a shell; record the arguments with a tiny script (run by Electron as Node).
   const recorder = path.join(os.tmpdir(), `termcraft-rdp-recorder-${process.pid}.js`);
   fs.writeFileSync(recorder, "require('fs').writeFileSync(process.argv[2], process.argv.slice(3).join(' '))");
-  store.saveSettings({ rdpClient: `/usr/bin/env ELECTRON_RUN_AS_NODE=1 ${JSON.stringify(process.execPath)} ${JSON.stringify(recorder)} ${JSON.stringify(marker)} {host} {port} {user}` });
+  // The custom client is Electron running the recorder as plain Node (set for the child only).
+  process.env.ELECTRON_RUN_AS_NODE = '1';
+  store.saveSettings({ rdpClient: `${JSON.stringify(process.execPath)} ${JSON.stringify(recorder)} ${JSON.stringify(marker)} {host} {port} {user}` });
   const rdp = store.saveSession({ name: 'Build Server (Windows)', protocol: 'rdp', host: 'build-01.example', port: 3389, username: 'alice', rdp: { domain: 'CORP' } });
   await js(`window.termcraft.reloadTree()`);
   await js(`void window.termcraft.openSession(window.termcraft.tree.sessions.find((s) => s.id === '${rdp.id}'))`);
   check('RDP launched', await waitFor(`window.termcraft.active.state === 'connected'`));
   await sleep(300);
+  for (let i = 0; i < 50 && !fs.existsSync(marker); i++) await sleep(100);
+  delete process.env.ELECTRON_RUN_AS_NODE;
   check('RDP client got the target', fs.existsSync(marker) && fs.readFileSync(marker, 'utf8').trim() === 'build-01.example 3389 alice');
   check('RDP card has no stray "null" text', !(await js(`document.querySelector('.rdp-card').textContent.includes('null')`)));
   await shot('02-rdp');

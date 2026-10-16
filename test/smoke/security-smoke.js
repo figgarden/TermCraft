@@ -63,10 +63,10 @@ module.exports = async function smoke(win) {
   fs.writeFileSync(victim, 'keep me');
   const pwned = path.join(scratch, 'PWNED');
   check('cannot read arbitrary files', await rejected(`window.api.file.readText('/etc/passwd')`));
-  check('cannot run arbitrary commands', await rejected(`window.api.app.run('touch ${pwned}')`));
-  check('cannot run an unapproved script', await rejected(`window.api.script.run('${victim}', null)`));
-  check('cannot delete files outside browsed folders', await rejected(`window.api.sftp.localOp('delete', '${victim}')`));
-  check('cannot open a file (could launch an executable)', (await js(`window.api.app.openPath('${victim}').then((r) => r)`)) === '');
+  check('cannot run arbitrary commands', await rejected(`window.api.app.run(${JSON.stringify('touch ' + pwned)})`));
+  check('cannot run an unapproved script', await rejected(`window.api.script.run(${JSON.stringify(victim)}, null)`));
+  check('cannot delete files outside browsed folders', await rejected(`window.api.sftp.localOp('delete', ${JSON.stringify(victim)})`));
+  check('cannot open a file (could launch an executable)', (await js(`window.api.app.openPath(${JSON.stringify(victim)}).then((r) => r)`)) === '');
   await sleep(300);
   check('victim file untouched, nothing executed', fs.readFileSync(victim, 'utf8') === 'keep me' && !fs.existsSync(pwned));
   await js(`window.api.store.saveSettings(JSON.parse('{"__proto__": {"rdpClient": "calc"}}'))`);
