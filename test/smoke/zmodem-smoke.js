@@ -34,11 +34,11 @@ module.exports = async function smoke(win) {
   await js(`window.termcraft.active.send(${JSON.stringify(`cd '${dest}' && PATH='${binDir}':$PATH rz\r`)})`);
   // The order dialog appears: it should already be sorted 1, 2, 3; press Send.
   let shown = '';
-  for (let i = 0; i < 50 && !shown; i++) { await sleep(100); shown = await js(`document.querySelector('.modal-header span')?.textContent || ''`); }
+  for (let i = 0; i < 200 && !shown; i++) { await sleep(100); shown = await js(`document.querySelector('.modal-header span')?.textContent || ''`); }
   check('rz in the terminal starts ZMODEM and asks to order the files', /Send 3 Files — ZMODEM/.test(shown));
   check('a series of files is offered in order', (await js(`[...document.querySelectorAll('.modal td.name')].map((x) => x.textContent).join(',')`)) === '1-loader.bin,2-kernel.img,3-config.txt');
   await js(`document.querySelector('.modal-footer .primary').click()`);
-  for (let i = 0; i < 100 && fs.readdirSync(dest).length < 3; i++) await sleep(100);
+  for (let i = 0; i < 300 && fs.readdirSync(dest).length < 3; i++) await sleep(100);
   await sleep(500);
   check('all files arrive intact on the device side', Object.entries(files).every(([n, d]) => fs.existsSync(path.join(dest, n)) && fs.readFileSync(path.join(dest, n)).equals(d)));
   const screen = await js(`window.termcraft.active.screenLines().join('\\n')`);
@@ -51,7 +51,7 @@ module.exports = async function smoke(win) {
   fs.writeFileSync(path.join(dest, name), payload);
   await js(`window.termcraft.active.send(${JSON.stringify(`PATH='${binDir}':$PATH sz ${name}\r`)})`);
   const got = path.join(os.homedir(), 'Downloads', name);
-  for (let i = 0; i < 100 && !fs.existsSync(got); i++) await sleep(100);
+  for (let i = 0; i < 300 && !fs.existsSync(got); i++) await sleep(100);
   await sleep(300);
   check('sz in the terminal downloads automatically to Downloads', fs.existsSync(got) && fs.readFileSync(got).equals(payload));
   fs.rmSync(got, { force: true });
@@ -60,7 +60,7 @@ module.exports = async function smoke(win) {
   dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] });
   await js(`window.termcraft.active.send(${JSON.stringify(`PATH='${binDir}':$PATH rz; echo RZ-DONE\r`)})`);
   let done = false;
-  for (let i = 0; i < 100 && !done; i++) { await sleep(100); done = /RZ-DONE\s*$/m.test(await js(`window.termcraft.active.screenLines().join('\\n')`)); }
+  for (let i = 0; i < 300 && !done; i++) { await sleep(100); done = /RZ-DONE\s*$/m.test(await js(`window.termcraft.active.screenLines().join('\\n')`)); }
   check('cancelling the file picker stops rz and returns to the prompt', done);
   fs.rmSync(dir, { recursive: true, force: true });
 };

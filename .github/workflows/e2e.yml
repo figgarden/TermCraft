@@ -40,6 +40,7 @@ jobs:
         timeout-minutes: 30
       - name: Screenshots
         if: always()
+        timeout-minutes: 8
         shell: bash
         env:
           TERMCRAFT_SHOTS_OUT: ${{ runner.temp }}/shots
@@ -54,7 +55,8 @@ jobs:
               TERMCRAFT_SMOKE="$1" npx electron . --user-data-dir="$2" || true
             fi
           }
-          shoot scripts/screenshots.js "$RUNNER_TEMP/ud1"
+          # The README demo prints with a Unix shell; Windows gets the cross-platform Appearance shots.
+          [ "$RUNNER_OS" != "Windows" ] && shoot scripts/screenshots.js "$RUNNER_TEMP/ud1"
           shoot test/smoke/themes-smoke.js "$RUNNER_TEMP/ud2"
           ls -la "$TERMCRAFT_SHOTS_OUT"
       - uses: actions/upload-artifact@v4

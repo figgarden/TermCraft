@@ -18,6 +18,9 @@ module.exports = async function smoke(win) {
   // Never actually open anything during tests.
   const externalOpened = [];
   shell.openExternal = async (u) => { externalOpened.push(u); };
+  // Nor open a file manager (on a headless Linux machine that call can block the app).
+  shell.showItemInFolder = () => {};
+  shell.openPath = async () => '';
   await sleep(1000);
 
   // --- Process isolation ------------------------------------------------------------
