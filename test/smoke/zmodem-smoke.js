@@ -14,7 +14,17 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 module.exports = async function smoke(win) {
   const js = (code) => win.webContents.executeJavaScript(`Promise.resolve(${code}).then((r) => (r && typeof r === 'object' ? JSON.stringify(r) : r))`);
-  const check = (label, ok) => console.log(`[smoke] ${ok ? 'PASS' : 'FAIL'} ${label}`);
+  let failed = false;
+  const check = (label, ok) => { if (!ok) failed = true; console.log(`[smoke] ${ok ? 'PASS' : 'FAIL'} ${label}`); };
+  // On a failure, show what the terminal and the transfer said (this suite is timing-sensitive on CI).
+  const diagnose = async (dest) => {
+    if (!failed) return;
+    const screen = await js(`window.termcraft.active.screenLines().filter((l) => l.trim()).slice(-12).join(' ⏎ ')`);
+    const events = await js(`window.__xfer.map((p) => p.state + (p.error ? ':' + p.error : '')).join(', ')`);
+    console.log(`[smoke] debug: screen = ${screen}`);
+    console.log(`[smoke] debug: transfer events = ${events}`);
+    console.log(`[smoke] debug: device folder = ${fs.readdirSync(dest).join(', ')}`);
+  };
   if (process.platform === 'win32') { console.log('[smoke] PASS skipped on Windows (rz/sz are Unix tools)'); return; }
   const rz = (spawnSync('/bin/sh', ['-c', 'command -v rz || ls /opt/homebrew/bin/rz /usr/local/bin/rz /usr/bin/rz 2>/dev/null | head -1'], { encoding: 'utf8' }).stdout || '').trim().split('\n')[0];
   if (!rz) { console.log('[smoke] PASS skipped: lrzsz not installed'); return; }
@@ -30,6 +40,7 @@ module.exports = async function smoke(win) {
   dialog.showOpenDialog = async () => ({ canceled: false, filePaths: ['3-config.txt', '1-loader.bin', '2-kernel.img'].map((n) => path.join(src, n)) });
   await sleep(1000);
 
+  await js(`(() => { window.__xfer = []; window.api.xfer.onProgress((id, p) => window.__xfer.push(p)); })()`);
   await js(`void window.termcraft.openSession({ name: 'device', protocol: 'local', local: { shell: '/bin/sh', args: '', cwd: ${JSON.stringify(dest)} } })`);
   await sleep(1200);
   await js(`window.termcraft.active.send(${JSON.stringify(`cd '${dest}' && PATH='${binDir}':$PATH rz\r`)})`);
@@ -41,6 +52,7 @@ module.exports = async function smoke(win) {
   await js(`document.querySelector('.modal-footer .primary').click()`);
   for (let i = 0; i < 300 && fs.readdirSync(dest).length < 3; i++) await sleep(100);
   await sleep(500);
+  await diagnose(dest);
   check('all files arrive intact on the device side', Object.entries(files).every(([n, d]) => fs.existsSync(path.join(dest, n)) && fs.readFileSync(path.join(dest, n)).equals(d)));
   const screen = await js(`window.termcraft.active.screenLines().join('\\n')`);
   check('the terminal is usable again afterwards', /ZMODEM transfer complete/.test(screen));
