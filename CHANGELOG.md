@@ -18,8 +18,7 @@ All notable changes to TermCraft are documented here. This project uses [Semanti
 - **Tab colors** per session or folder, shown on tabs, panes and in the Session Manager.
 - **Save Output As…** saves a tab's whole scrollback to a text file.
 - Ready-made **Network devices** and **Linux servers** keyword-highlighting rules (Settings → Keyword Highlighting).
-
-- **Command Buffer** (replaces the Command Window): a SecureCRT-style command strip below the terminal, or a WinFIOL-style script editor beside it that sends line by line (⌘/Ctrl+Enter steps through the script), a selection or everything, waiting for the device prompt between lines, with Stop, line numbers and command files.
+- **Command Buffer** (replaces the Command Window): a SecureCRT-style command strip below the terminal, or a WinFIOL-style script editor beside it that sends line by line (⌘/Ctrl+Enter steps through the script), a selection or everything, waiting for the device prompt between lines, with Stop, line numbers and command files. Open it from its toolbar button or ⌘E / Ctrl+Shift+E.
 
 ### Changed — appearance
 - **One Appearance screen** (Settings → Appearance) replaces the theme grid and the separate color-scheme settings: choose a theme family and Light, Dark or Auto (follows the system), with variants where a family has several (e.g. Catppuccin Frappé / Macchiato / Mocha) and a live preview of the window and a terminal. Your current theme is carried over.
@@ -27,17 +26,17 @@ All notable changes to TermCraft are documented here. This project uses [Semanti
 - **Typography**: JetBrains Mono is built in (same look on every computer), with font size, line spacing (Tight / Normal / Relaxed), margins (Compact / Comfortable / Spacious) and cursor style.
 - **New icon set** for the toolbar and Session Manager, quieter toolbar and button bar, tabs that blend into their terminal, slim scrollbars, and a small dot (instead of italic text) for tabs with new output.
 - On **macOS** the toolbar is the title bar, and native parts (window controls, scrollbars, dialogs) follow the chosen light or dark appearance.
+- **Sending to all tabs** is easier to notice: the broadcast button and the toolbar underline turn red, and the Command Buffer's "All tabs" target is outlined in red.
 - "Global Options" is now **Settings** (⌘, on macOS, Ctrl+, elsewhere).
 
 ### Fixed
 - Local Shell tabs now pass raw bytes instead of re-encoding them as UTF-8 (on macOS and Linux), so binary transfers and non-UTF-8 encodings work there.
 - Telnet, Rlogin and Raw TCP connections to an unreachable host now fail after the session's connect timeout (default 20 s) instead of waiting a minute or more.
+- Button errors (for example, a program that doesn't exist) are now shown instead of failing silently.
+- Session-type and add-button symbols no longer show as empty boxes on Linux: session types use short labels (SSH, TEL, COM, …) and the add buttons use the icon set.
 
 ### Security
 - "Launch Application" buttons now run the program directly instead of through a shell, so `;`, `|`, `&&`, `$( )` and backticks are passed as plain text and can't chain extra commands. Each new command must be approved once in a native system dialog (Cancel, Run Once or Always Allow). Approvals are stored in a file the UI can't write, so an imported button bar can't approve its own commands. Windows batch files must now be started as `cmd /c file.bat`.
-
-### Fixed
-- Button errors (for example, a program that doesn't exist) are now shown instead of failing silently.
 
 ## [0.1.1] — 2026-10-15
 
