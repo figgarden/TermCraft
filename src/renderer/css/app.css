@@ -770,6 +770,11 @@ input[type=text], input[type=search], input[type=number], input[type=password], 
 .bb:hover { background: var(--bg-hover); border-color: color-mix(in srgb, var(--accent) 40%, var(--border)); }
 .bb-select { height: 26px; border-radius: 7px; }
 .sm-title { min-width: 0; overflow: hidden; text-overflow: ellipsis; }
+/* The Appearance preview shows the window controls of the system it runs on: none drawn for Windows and Linux. */
+html:not([data-platform="darwin"]) .ap-titlebar i { display: none; }
+html:not([data-platform="darwin"]) .ap-titlebar span { margin-right: 0; text-align: left; }
+.bb-add { display: inline-grid; place-items: center; }
+.proto { width: 26px; letter-spacing: -.02em; }
 /* New output in a background tab: a small accent dot, not restyled text. */
 .tab.activity .tab-title { font-style: normal; color: inherit; }
 .tab.activity .tab-title::after { content: ""; display: inline-block; width: 6px; height: 6px; margin-left: 6px; border-radius: 50%; background: var(--accent); vertical-align: 1px; }

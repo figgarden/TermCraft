@@ -2,6 +2,7 @@
 // Copyright (C) 2026 Gabriel Moreno and contributors
 // Button bars: multiple named bars, each a row of configurable buttons.
 import { h, showDialog, contextMenu, confirmDialog, promptDialog, toast, field } from './dom.js';
+import { icon } from './icons.js';
 
 /** What a button can do. */
 export const FUNCTIONS = [
@@ -108,8 +109,8 @@ export class ButtonBars {
       select,
       h('button.icon-btn.bb-manage', { title: 'Button bar options', 'aria-label': 'Button bar options', onclick: (e) => { const r = e.currentTarget.getBoundingClientRect(); this.barMenu(r.left, r.top - 4, true); } }, '⋯'),
       h('div.bb-buttons', {},
-        buttons.length ? buttons : h('span.bb-empty', {}, 'No buttons yet — click ＋ or right-click here to add one.'),
-        h('button.bb.bb-add', { title: 'New button', 'aria-label': 'New button', onclick: () => this.editButton(null) }, '＋')));
+        buttons.length ? buttons : h('span.bb-empty', {}, 'No buttons yet — click + or right-click here to add one.'),
+        h('button.bb.bb-add', { title: 'New button', 'aria-label': 'New button', onclick: () => this.editButton(null) }, icon('plus', 14))));
   }
 
   /** Switch bars. Choosing one manually also makes it the default going forward. */
@@ -254,7 +255,7 @@ export class ButtonBars {
     const bar = { id: newId(), name: this.uniqueName(name), buttons: [] };
     this.sessionOverride = null;
     await this.save([...clone(this.bars), bar], bar.id);
-    toast(`Created “${bar.name}”. Click ＋ to add buttons.`);
+    toast(`Created “${bar.name}”. Click + to add buttons.`);
   }
 
   async renameBar() {

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 Gabriel Moreno and contributors
 import { h, contextMenu, confirmDialog, promptDialog, toast } from './dom.js';
+import { icon } from './icons.js';
 
 let seq = 0;
 let transferSeq = 0;
@@ -34,7 +35,7 @@ class FilePane {
         h('button.icon-btn', { title: 'Up one level', 'aria-label': 'Up one level', onclick: () => this.up() }, '⬆'),
         h('button.icon-btn', { title: 'Home', 'aria-label': 'Home', onclick: () => this.load(side === 'local' ? '' : this.tab.home) }, '⌂'),
         h('button.icon-btn', { title: 'Refresh', 'aria-label': 'Refresh', onclick: () => this.load(this.path) }, '⟳'),
-        h('button.icon-btn', { title: 'New folder', 'aria-label': 'New folder', onclick: () => this.mkdir() }, '＋'),
+        h('button.icon-btn', { title: 'New folder', 'aria-label': 'New folder', onclick: () => this.mkdir() }, icon('folderPlus', 16)),
         this.pathInput),
       h('div.file-table-wrap', {
         tabindex: 0,
