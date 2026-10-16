@@ -52,7 +52,6 @@ module.exports = async function smoke(win) {
   await js(`document.querySelector('.modal-footer .primary').click()`);
   for (let i = 0; i < 300 && fs.readdirSync(dest).length < 3; i++) await sleep(100);
   await sleep(500);
-  await diagnose(dest);
   check('all files arrive intact on the device side', Object.entries(files).every(([n, d]) => fs.existsSync(path.join(dest, n)) && fs.readFileSync(path.join(dest, n)).equals(d)));
   const screen = await js(`window.termcraft.active.screenLines().join('\\n')`);
   check('the terminal is usable again afterwards', /ZMODEM transfer complete/.test(screen));
@@ -75,5 +74,6 @@ module.exports = async function smoke(win) {
   let done = false;
   for (let i = 0; i < 300 && !done; i++) { await sleep(100); done = /RZ-DONE\s*$/m.test(await js(`window.termcraft.active.screenLines().join('\\n')`)); }
   check('cancelling the file picker stops rz and returns to the prompt', done);
+  await diagnose(dest);
   fs.rmSync(dir, { recursive: true, force: true });
 };
