@@ -17,11 +17,14 @@ module.exports = async function smoke(win, { store }) {
   const barName = () => js(`document.querySelector('.bb-select').selectedOptions[0].textContent`);
   const labels = () => js(`[...document.querySelectorAll('.bb-buttons .bb:not(.bb-add)')].map((b) => b.textContent).join('|')`);
   const modal = () => js(`document.querySelector('.modal-header span')?.textContent || ''`);
+  const waitFor = async (expr, ms = 20000) => { for (let i = 0; i < ms / 100; i++) { if (await js(expr)) return true; await sleep(100); } return false; };
 
   win.setSize(1280, 800);
-  await sleep(800);
+  // A cold start can take a few seconds: wait for the app and the shell tab rather than a fixed delay.
+  await waitFor(`!!(window.termcraft && document.querySelector('.bb-select'))`);
   await js(`void window.termcraft.dispatch('localShell')`);
-  await sleep(1500);
+  await waitFor(`window.termcraft.active?.state === 'connected'`);
+  await sleep(500);
 
   check(`starts on Default bar (${await barName()})`, (await barName()) === 'Default');
   check(`default buttons (${await labels()})`, (await labels()).startsWith('ls -la|'));
