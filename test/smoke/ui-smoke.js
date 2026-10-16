@@ -65,15 +65,15 @@ module.exports = async function smoke(win) {
   await sleep(400);
   await js(`document.querySelector('.cat[data-cat="Keyword Highlighting"]').click()`);
   await sleep(300);
-  check('global options opens', /option/i.test(await modalTitle()));
+  check('Settings opens', /^Settings/.test(await modalTitle()));
   await shot('07-global-options');
   await js(`document.querySelector('.modal-footer button').click()`);
 
   // Light theme.
-  await js(`window.termcraft.saveSettings({ theme: 'light', showCommandWindow: true })`);
+  await js(`window.termcraft.saveSettings({ appearance: 'light', showCommandWindow: true })`);
   await sleep(600);
   check('light theme applies', (await js(`document.documentElement.dataset.theme`)) === 'light');
   await shot('08-light-theme');
-  await js(`window.termcraft.saveSettings({ theme: 'dark', showCommandWindow: false })`);
+  await js(`window.termcraft.saveSettings({ appearance: 'dark', showCommandWindow: false })`);
   await sleep(300);
 };

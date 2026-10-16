@@ -23,7 +23,11 @@ class TcpBase extends EventEmitter {
       this.sock = sock;
       sock.setNoDelay(true);
       sock.setKeepAlive(true, 30000);
-      sock.once('connect', () => { sock.removeListener('error', reject); resolve(); });
+      // Unreachable hosts otherwise hang on "Connecting" until the OS gives up (a minute or more).
+      const secs = Number(s.ssh?.readyTimeout) || 20;
+      const timer = setTimeout(() => sock.destroy(new Error(`Timed out after ${secs} s (host unreachable or port filtered)`)), secs * 1000);
+      sock.once('connect', () => { clearTimeout(timer); sock.removeListener('error', reject); resolve(); });
+      sock.once('error', () => clearTimeout(timer));
       sock.once('error', reject);
       sock.on('close', () => this._closed());
     });
@@ -181,14 +185,19 @@ class LocalShellConnection extends EventEmitter {
     this.proc = P.spawn(shell, args, {
       name: this.session.terminal?.termType || 'xterm-256color',
       cols, rows, cwd,
+      // Raw bytes both ways (encoding: null): binary transfers (ZMODEM) and non-UTF-8 encodings stay intact.
+      encoding: process.platform === 'win32' ? 'utf8' : null,
       env: { ...process.env, TERM: this.session.terminal?.termType || 'xterm-256color', COLORTERM: 'truecolor', TERM_PROGRAM: 'TermCraft' },
     });
-    this.proc.onData((d) => this.emit('data', Buffer.from(d, 'utf8')));
+    this.proc.onData((d) => this.emit('data', Buffer.isBuffer(d) ? d : Buffer.from(d, 'utf8')));
     this.proc.onExit(() => { if (!this.closed) { this.closed = true; this.emit('close'); } });
     this.emit('status', { shell });
   }
 
-  write(data) { this.proc?.write(typeof data === 'string' ? data : data.toString('utf8')); }
+  write(data) {
+    if (process.platform === 'win32') this.proc?.write(typeof data === 'string' ? data : data.toString('utf8'));
+    else this.proc?.write(typeof data === 'string' ? Buffer.from(data, 'utf8') : data);
+  }
   resize(cols, rows) { try { this.proc?.resize(cols, rows); } catch { /* process exited */ } }
 
   close() {

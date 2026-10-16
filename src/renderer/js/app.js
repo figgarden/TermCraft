@@ -6,12 +6,17 @@ import { SftpTab } from './sftp-tab.js';
 import { ScpTab } from './scp-tab.js';
 import { VncTab } from './vnc-tab.js';
 import { RdpTab } from './rdp-tab.js';
+import { BatchTab } from './batch-tab.js';
+import { TftpTab } from './tftp-tab.js';
+import { credentialsDialog, importHostsDialog, runCommandsDialog, sshKeysDialog, installKeyDialog, orderFilesDialog, errMsg } from './tools.js';
 import { SessionManager } from './session-manager.js';
 import { editSession, PROTOCOL_LABEL } from './session-editor.js';
 import { quickConnect, globalOptions, knownHostsDialog, handlePrompt, scriptHelp, shortcutsHelp, aboutDialog, licenseDialog } from './dialogs.js';
 import { compileHighlights } from './highlight.js';
 import { ButtonBars } from './button-bars.js';
-import { resolveTheme, cssVars } from './themes.js';
+import { currentTheme, appearanceOf, cssVars } from './themes.js';
+import { icon } from './icons.js';
+import { CommandBuffer } from './command-buffer.js';
 
 const api = window.api;
 
@@ -56,8 +61,6 @@ class App {
     this.fontDelta = 0;
     this.highlights = null;
     this.keymap = new Map();
-    this.cmdHistory = [];
-    this.cmdHistoryIdx = -1;
   }
 
   async init() {
@@ -65,7 +68,11 @@ class App {
     this.platform = this.info.platform;
     document.documentElement.dataset.platform = this.platform;
     this.layout = this.settings.layout || 'tabs';
+    // Older versions stored one theme; move it to Light / Dark / Auto once.
+    if (!this.settings.appearance) this.settings = await api.store.saveSettings(appearanceOf(this.settings));
     this._compile();
+    // xterm measures the font when a terminal opens: load the bundled one first.
+    await Promise.all(['400', '700'].map((w) => document.fonts.load(`${w} 14px "JetBrains Mono"`).catch(() => {})));
     this._buildUi();
     this.applyTheme();
 
@@ -91,10 +98,12 @@ class App {
       await this.reloadTree();
       toast(`Login saved for "${session.name}" — you won't be asked again`);
     });
+    api.xfer.onProgress((tabId, p) => this.tabById(tabId)?.onXfer?.(p));
     api.onMenu((action, arg) => this.dispatch(action, arg));
     api.onRequest((type, payload) => this.onRequest(type, payload));
 
-    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => this.applyTheme());
+    // The OS switched light/dark (Auto mode): re-apply, keeping any preview that Settings is showing.
+    matchMedia('(prefers-color-scheme: dark)').addEventListener('change', () => this.applyTheme(this.previewPatch));
     setInterval(() => this.updateStatus(), 1000);
     this.renderTabs();
     this.updateStatus();
@@ -145,8 +154,8 @@ class App {
         e.target.value = '';
       },
     });
-    this.broadcastBtn = tb('⇶', 'Send keystrokes to all tabs', 'toggleBroadcast');
-    this.logBtn = tb('●', 'Log session', 'toggleLog');
+    this.broadcastBtn = tb(icon('broadcast'), 'Send keystrokes to all tabs', 'toggleBroadcast');
+    this.logBtn = tb(icon('record'), 'Log session', 'toggleLog');
     // Session layout switch: tabs, or tile every session on screen at once.
     this.layoutSeg = h('div.segmented', { role: 'radiogroup', 'aria-label': 'Session layout' },
       LAYOUTS.map(([value, label, title]) => h('button', {
@@ -155,29 +164,28 @@ class App {
       }, label)));
 
     const toolbar = h('header.toolbar', {},
-      tb('⚡', 'Quick Connect', 'quickConnect'),
-      tb('☰', 'Toggle Session Manager', 'toggleSessionManager'),
+      tb(icon('sidebar'), 'Toggle Session Manager', 'toggleSessionManager'),
+      tb(icon('bolt'), 'Quick Connect', 'quickConnect'),
       h('span.tb-sep'),
-      tb('⟳', 'Reconnect', 'reconnect'),
-      tb('⏏', 'Disconnect', 'disconnect'),
-      tb('⧉', 'Clone session', 'cloneTab'),
+      tb(icon('rotate'), 'Reconnect', 'reconnect'),
+      tb(icon('unplug'), 'Disconnect', 'disconnect'),
+      tb(icon('copy'), 'Clone session', 'cloneTab'),
       h('span.tb-sep'),
-      tb('›_', 'New local shell', 'localShell'),
-      tb('⇅', 'SFTP tab', 'sftpTab'),
-      tb('SCP', 'SCP Transfer Manager', 'scpTab', { class: 'tb-text' }),
+      tb(icon('terminal'), 'New local shell', 'localShell'),
+      tb(icon('transfer'), 'SFTP tab', 'sftpTab'),
+      tb(icon('folderSync'), 'SCP Transfer Manager', 'scpTab'),
       h('span.tb-sep'),
-      tb('⌕', 'Find', 'find'),
+      tb(icon('search'), 'Find', 'find'),
       this.logBtn,
-      tb('▶', 'Run script', 'runScript'),
-      tb('⚙', 'Session options', 'sessionOptions'),
-      tb('⚒', 'Global options', 'globalOptions'),
-      h('span.tb-sep'),
+      tb(icon('play'), 'Run script', 'runScript'),
       this.broadcastBtn,
       h('span.tb-sep'),
       this.layoutSeg,
-      tb('⤢', 'Maximize terminal area (hide all panels)', 'focusMode'),
+      tb(icon('expand'), 'Maximize terminal area (hide all panels)', 'focusMode'),
       h('span.tb-flex'),
-      this.quickInput);
+      this.quickInput,
+      tb(icon('sliders'), 'Session options', 'sessionOptions'),
+      tb(icon('gear'), 'Settings', 'globalOptions'));
 
     this.smEl = h('aside.session-manager', { 'aria-label': 'Session Manager' });
     this.splitter = h('div.splitter', { title: 'Drag to resize' });
@@ -185,23 +193,26 @@ class App {
     this.workspace = h('main.workspace', { class: `layout-${this.layout}` });
     this.buttonBar = h('div.button-bar', { 'aria-label': 'Button bar' });
     this.buttons = new ButtonBars(this, this.buttonBar);
-    this.cmdWindow = this._buildCommandWindow();
+    this.buffer = new CommandBuffer(this);
     this.statusBar = h('footer.status-bar', { role: 'status' });
 
     // Collapsed Session Manager: a slim rail at the left edge.
     this.smRail = h('button.sm-rail', {
       title: 'Show Session Manager', 'aria-label': 'Show Session Manager',
       onclick: () => this.dispatch('toggleSessionManager'),
-    }, h('span', {}, '»'), h('span.sm-rail-label', {}, 'Sessions'));
+    }, icon('chevronsRight', 16), h('span.sm-rail-label', {}, 'Sessions'));
     this.exitFocusBtn = h('button.exit-focus', {
       title: 'Restore panels', onclick: () => this.dispatch('focusMode'),
     }, '⤡ Restore panels');
 
-    const center = h('div.center', {}, this.tabbar, this.workspace, this.buttonBar, this.cmdWindow);
+    this.workRow = h('div.work-row', {}, this.workspace);
+    this.center = h('div.center', {}, this.tabbar, this.workRow, this.buttonBar);
+    const center = this.center;
     document.body.append(toolbar, h('div.body', {}, this.smRail, this.smEl, this.splitter, center), this.statusBar, this.exitFocusBtn);
 
     this.sm = new SessionManager(this, this.smEl);
     this.sm.render();
+    this.placeBuffer();
     this._initSplitter();
     this.renderButtonBar();
     this.applyVisibility();
@@ -243,57 +254,15 @@ class App {
     this.workspace.append(this.welcome);
   }
 
-  // ---- command window -------------------------------------------------------
-  _buildCommandWindow() {
-    this.cmdTarget = h('select', { 'aria-label': 'Send commands to' },
-      h('option', { value: 'current' }, 'Current tab'),
-      h('option', { value: 'all' }, 'All tabs'),
-      h('option', { value: 'visible' }, 'Visible tabs'));
-    this.cmdInput = h('textarea', {
-      rows: 2, placeholder: 'Type a command and press Enter to send. Shift+Enter for newline. ↑/↓ history.',
-      'aria-label': 'Command window',
-      onkeydown: (e) => {
-        if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); this.sendCommand(); }
-        else if (e.key === 'ArrowUp' && !this.cmdInput.value.includes('\n')) { e.preventDefault(); this._cmdHist(1); }
-        else if (e.key === 'ArrowDown' && !this.cmdInput.value.includes('\n')) { e.preventDefault(); this._cmdHist(-1); }
-      },
-    });
-    this.cmdCharMode = h('input', { type: 'checkbox', title: 'Send each keystroke immediately', 'aria-label': 'Character mode' });
-    this.cmdInput.addEventListener('input', (e) => {
-      if (!this.cmdCharMode.checked) return;
-      const v = this.cmdInput.value;
-      if (v) { this._cmdSend(v); this.cmdInput.value = ''; }
-    });
-    return h('div.command-window', {},
-      h('div.cmd-head', {}, h('span', {}, 'Command Window — send to'), this.cmdTarget,
-        h('label.check', {}, this.cmdCharMode, 'Character mode'),
-        h('button.small', { onclick: () => this.sendCommand() }, 'Send'),
-        h('button.icon-btn', { title: 'Close', 'aria-label': 'Close command window', onclick: () => this.dispatch('toggleCommandWindow') }, '✕')),
-      this.cmdInput);
-  }
-
-  _cmdHist(dir) {
-    if (!this.cmdHistory.length) return;
-    this.cmdHistoryIdx = Math.max(-1, Math.min(this.cmdHistory.length - 1, this.cmdHistoryIdx + dir));
-    this.cmdInput.value = this.cmdHistoryIdx < 0 ? '' : this.cmdHistory[this.cmdHistoryIdx];
-  }
-
-  _cmdTargets() {
-    const mode = this.cmdTarget.value;
-    const terms = this.tabs.filter((t) => t.kind === 'terminal');
-    if (mode === 'all') return terms;
-    if (mode === 'visible') return this.layout === 'tabs' ? terms.filter((t) => t === this.active) : terms;
-    return this.active?.kind === 'terminal' ? [this.active] : [];
-  }
-
-  _cmdSend(text) { for (const t of this._cmdTargets()) t.send(text); }
-
-  sendCommand() {
-    const text = this.cmdInput.value;
-    if (text) { this.cmdHistory.unshift(text); this.cmdHistory = this.cmdHistory.slice(0, 100); }
-    this.cmdHistoryIdx = -1;
-    this._cmdSend(text.replace(/\r?\n/g, '\r') + '\r');
-    this.cmdInput.value = '';
+  /** The Command Buffer sits below the terminals or beside them (half and half). */
+  placeBuffer() {
+    const { el, splitter } = this.buffer;
+    if (this.buffer.position === 'side') {
+      this.workRow.append(splitter, el);
+    } else {
+      this.center.insertBefore(el, this.buttonBar);
+      this.center.insertBefore(splitter, el);
+    }
   }
 
   // ---- button bar ------------------------------------------------------------
@@ -317,6 +286,43 @@ class App {
     this.addTab(tab);
     if (session) tab.connect();
     return tab;
+  }
+
+  /** Run commands on many sessions in the background; results open in their own tab. */
+  openBatch(opts) {
+    const tab = new BatchTab(this, opts);
+    this.addTab(tab);
+    tab.connect();
+    return tab;
+  }
+
+  runCommands(opts) { return runCommandsDialog(this, opts); }
+
+  openTftp() {
+    const existing = this.tabs.find((t) => t.kind === 'tftp');
+    if (existing) return this.activate(existing);
+    this.addTab(new TftpTab(this));
+  }
+
+  /** Tab color: the session's own, else the nearest folder color. */
+  sessionColor(session) {
+    const own = session?.terminal?.tabColor;
+    if (own) return own;
+    const stored = session?.id && this.tree.sessions.find((x) => x.id === session.id);
+    for (let id = (stored || session)?.parent; id;) {
+      const f = this.tree.folders.find((x) => x.id === id);
+      if (!f) break;
+      if (f.color) return f.color;
+      id = f.parent;
+    }
+    return '';
+  }
+
+  async fileTransfer(kind) {
+    const t = this.active;
+    if (t?.kind !== 'terminal' || t.state !== 'connected') return toast('Connect a terminal tab first (usually the serial console)', 'warn');
+    const [dir, protocol] = { xmodemSend: ['send', 'xmodem'], xmodemSend1k: ['send', 'xmodem-1k'], ymodemSend: ['send', 'ymodem'], zmodemSend: ['send', 'zmodem'], xmodemReceive: ['receive', 'xmodem'], ymodemReceive: ['receive', 'ymodem'], zmodemReceive: ['receive', 'zmodem'] }[kind];
+    try { await api.xfer[dir](t.id, protocol); } catch (e) { if (!/failed|Cancel/.test(errMsg(e))) toast(errMsg(e), 'error'); }
   }
 
   openSftp(session) {
@@ -403,13 +409,23 @@ class App {
         },
       },
       h('span.dot', { 'aria-hidden': 'true' }),
-      ['sftp', 'scp', 'vnc', 'rdp'].includes(t.kind) ? h('span.tab-kind', {}, t.kind.toUpperCase()) : null,
+      ['sftp', 'scp', 'vnc', 'rdp', 'tftp'].includes(t.kind) ? h('span.tab-kind', {}, t.kind.toUpperCase()) : null,
       t.logging ? h('span.tab-log', { title: 'Logging' }, '●') : null,
       h('span.tab-title', {}, t.displayTitle),
       h('button.tab-close', { title: 'Close tab', 'aria-label': `Close ${t.displayTitle}`, onmousedown: (e) => e.stopPropagation(), onclick: () => this.closeTab(t) }, '✕'));
       return el;
     }));
-    for (const t of this.tabs) t.el.querySelector('.pane-title').textContent = `${t.displayTitle} — ${t.state}`;
+    for (const t of this.tabs) {
+      t.el.querySelector('.pane-title').textContent = `${t.displayTitle} — ${t.state}`;
+      const color = ['terminal', 'sftp', 'scp', 'vnc', 'rdp'].includes(t.kind) ? this.sessionColor(t.session) : '';
+      t.el.style.setProperty('--tab-color', color || 'transparent');
+      t.el.classList.toggle('colored', !!color);
+      const tabEl = this.tabbar.children[this.tabs.indexOf(t)];
+      if (tabEl && color) { tabEl.style.setProperty('--tab-color', color); tabEl.classList.add('colored'); }
+      // The active tab blends into its own terminal, even when a session uses other colors.
+      const bg = t.term?.options.theme?.background;
+      if (tabEl && bg) { tabEl.style.setProperty('--term-bg', bg); tabEl.style.setProperty('--fg-tab', t.term.options.theme.foreground); }
+    }
     document.title = this.active ? `${this.active.displayTitle} — TermCraft` : 'TermCraft';
     this.logBtn.classList.toggle('on', !!this.active?.logging);
   }
@@ -418,7 +434,7 @@ class App {
     contextMenu(e.clientX, e.clientY, [
       { label: 'Reconnect', action: () => t.connect() },
       { label: 'Disconnect', action: () => t.disconnect(), disabled: t.state !== 'connected' },
-      { label: 'Clone Session', action: () => this.cloneTab(t) },
+      ['batch', 'tftp'].includes(t.kind) ? null : { label: 'Clone Session', action: () => this.cloneTab(t) },
       t.kind === 'terminal' ? { label: 'Connect SFTP Tab', action: () => this.openSftp(t.session), disabled: t.cfg.protocol !== 'ssh2' } : null,
       t.kind === 'terminal' ? { label: 'SCP Transfer Manager', action: () => this.openScp(t.session), disabled: t.cfg.protocol !== 'ssh2' } : null,
       '-',
@@ -432,7 +448,7 @@ class App {
   }
 
   cloneTab(t = this.active) {
-    if (!t) return;
+    if (!t || t.kind === 'batch' || t.kind === 'tftp') return;
     if (t.kind === 'scp') this.openScp(t.session);
     else if (t.kind === 'sftp') this.openSftp(t.session);
     else this.openSession(t.session);
@@ -549,6 +565,7 @@ class App {
   // ---- settings ---------------------------------------------------------------
   async saveSettings(patch, quiet = false) {
     this.settings = await api.store.saveSettings(patch);
+    this.view = this.settings;
     if (quiet) return;
     this._compile();
     this.renderButtonBar();
@@ -563,15 +580,27 @@ class App {
     for (const t of this.tabs) if (t.kind === 'scp') t.refreshLists();
   }
 
-  /** Apply an app theme (defaults to the saved one) to the UI and to theme-following terminals. */
-  applyTheme(name = this.settings.theme) {
-    const t = resolveTheme(name, matchMedia('(prefers-color-scheme: dark)').matches);
+  /**
+   * Apply the theme for the current appearance (Light / Dark / Auto) to the window and to every
+   * terminal that matches the theme. `preview` (a settings-like object) shows a choice live.
+   */
+  applyTheme(preview = null) {
+    this.previewPatch = preview;
+    const s = preview ? { ...this.settings, ...preview } : this.settings;
+    const t = currentTheme(s, matchMedia('(prefers-color-scheme: dark)').matches);
     const root = document.documentElement;
     for (const [k, v] of Object.entries(cssVars(t))) root.style.setProperty(k, v);
+    root.style.setProperty('--term-pad', `${{ compact: 4, comfortable: 12, spacious: 20 }[s.terminalPadding] ?? 12}px`);
     root.dataset.theme = t.dark ? 'dark' : 'light';
-    const changed = this.theme !== t;
+    // Native parts follow the theme; in Auto they follow the OS, so its light/dark setting stays visible to us.
+    api.app.setChrome?.({ source: appearanceOf(s).appearance === 'auto' ? 'system' : t.dark ? 'dark' : 'light', bg: t.ui.panel });
+    const changed = this.theme !== t || !!preview || !!this.view?.__preview;
     this.theme = t;
-    if (changed) for (const tab of this.tabs) tab.applySettings?.();
+    this.view = preview ? { ...s, __preview: true } : this.settings; // what terminals render with
+    if (changed) {
+      for (const tab of this.tabs) tab.applySettings?.();
+      this.renderTabs(); // tabs take their background from their (now recolored) terminal
+    }
   }
 
   applyVisibility() {
@@ -580,14 +609,15 @@ class App {
     this.splitter.hidden = !s.showSessionManager;
     this.smRail.hidden = !!s.showSessionManager;
     this.buttonBar.hidden = !s.showButtonBar;
-    this.cmdWindow.hidden = !s.showCommandWindow;
+    this.buffer.el.hidden = !s.showCommandWindow;
+    this.buffer.splitter.hidden = !s.showCommandWindow;
     this.statusBar.hidden = !s.showStatusBar;
     this.fitAll();
   }
 
   toggleSetting(key) {
     this.saveSettings({ [key]: !this.settings[key] }).then(() => {
-      if (key === 'showCommandWindow' && this.settings.showCommandWindow) this.cmdInput.focus();
+      if (key === 'showCommandWindow' && this.settings.showCommandWindow) this.buffer.focus();
       if (key === 'showSessionManager' && this.settings.showSessionManager) this.sm.filterInput.focus();
     });
   }
@@ -595,6 +625,10 @@ class App {
   updateStatus() {
     const t = this.active;
     if (!t) { this.statusBar.replaceChildren(h('span', {}, 'Ready')); return; }
+    if (t.kind === 'batch' || t.kind === 'tftp') {
+      this.statusBar.replaceChildren(h('span.st', { class: `st-${t.state}` }, t.kind === 'tftp' ? (t.state === 'connected' ? 'TFTP server running' : 'TFTP server stopped') : (t.state === 'connecting' ? 'Running commands' : 'Commands finished')));
+      return;
+    }
     const cfg = t.cfg || this.effectiveSession(t.session);
     const parts = [];
     parts.push(h('span.st', { class: `st-${t.state}` }, t.state[0].toUpperCase() + t.state.slice(1)));
@@ -688,6 +722,18 @@ class App {
         toast(this.broadcast ? 'Keystrokes now go to ALL tabs' : 'Broadcast off', this.broadcast ? 'warn' : 'info');
         return this.updateStatus();
       case 'sendAscii': return this.sendAsciiFile();
+      case 'xmodemSend': case 'xmodemSend1k': case 'ymodemSend': case 'zmodemSend': case 'xmodemReceive': case 'ymodemReceive': case 'zmodemReceive': return this.fileTransfer(action);
+      case 'saveOutput': return term?.saveOutput();
+      case 'tftpServer': return this.openTftp();
+      case 'runCommands': return this.runCommands(this.sm.selected?.kind === 'folder' ? { folderId: this.sm.selected.id } : { sessionIds: [this.sm.selected?.kind === 'session' ? this.sm.selected.id : t?.session?.id].filter(Boolean) });
+      case 'manageCredentials': return credentialsDialog(this);
+      case 'importHosts': return importHostsDialog(this, this.sm.currentFolder());
+      case 'sshKeys': return sshKeysDialog(this);
+      case 'installKey': {
+        const s = (t?.kind === 'terminal' && t.cfg.protocol === 'ssh2' && t.session) || (this.sm.selected?.kind === 'session' && this.tree.sessions.find((x) => x.id === this.sm.selected.id));
+        if (s?.protocol !== 'ssh2') return toast('Select an SSH2 session or tab first', 'warn');
+        return installKeyDialog(this, s);
+      }
       case 'runScript': return this.runScript(arg);
       case 'cancelScripts': return api.script.cancel();
       case 'openExamples': return api.app.openPath(await api.script.examplesDir());
@@ -735,6 +781,7 @@ class App {
   async onRequest(type, p) {
     switch (type) {
       case 'prompt': return handlePrompt(this, p);
+      case 'orderFiles': return orderFilesDialog(this, p);
       case 'confirmClose': {
         const n = this.tabs.filter((t) => t.state === 'connected').length;
         if (!n || !this.settings.confirmCloseConnected) return true;

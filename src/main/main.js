@@ -1,20 +1,29 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 Gabriel Moreno and contributors
 'use strict';
-const { app, BrowserWindow, ipcMain, dialog, clipboard, safeStorage, shell, Menu, session: electronSession } = require('electron');
+const { app, BrowserWindow, ipcMain, dialog, clipboard, safeStorage, shell, Menu, nativeTheme, session: electronSession } = require('electron');
 const { pathToFileURL } = require('url');
 const { isSafeExternalUrl, ApprovedPaths, safeJsonParse } = require('./security');
 const path = require('path');
 const fs = require('fs');
 const os = require('os');
 const { Store } = require('./store');
-const { ConnectionManager } = require('./connection-manager');
+const { ConnectionManager, PROTOCOLS } = require('./connection-manager');
 const { ScriptEngine } = require('./scripting');
 const { SftpService } = require('./sftp-service');
 const { ScpService } = require('./scp-service');
 const { VncBridge, RdpService } = require('./remote-desktop');
 const { SerialConnection, defaultShell } = require('./protocols/simple');
 const { buildMenu } = require('./menu');
+const { Launcher } = require('./launcher');
+const { BatchRunner } = require('./batch-runner');
+const { TftpServer } = require('./tftp-server');
+const { parseHosts } = require('./host-import');
+const sshKeys = require('./ssh-keys');
+const xmodem = require('./xmodem');
+const zmodem = require('./zmodem');
+const { SshConnection } = require('./protocols/ssh');
+const { timestamp } = require('./util');
 
 app.setName('TermCraft');
 
@@ -23,7 +32,9 @@ const COPYRIGHT = 'Copyright © 2026 Gabriel Moreno and contributors';
 const LICENSE_NOTICE = 'TermCraft is free software: you can redistribute it and/or modify it under the terms of the GNU General Public License as published by the Free Software Foundation, either version 2 of the License, or (at your option) any later version. It comes with ABSOLUTELY NO WARRANTY.';
 
 let win = null;
-let store, manager, scripts, sftp, scpService, vnc, rdp;
+let store, manager, scripts, sftp, scpService, vnc, rdp, launcher, batch;
+let tftp = null;
+const xfers = new Map(); // tabId -> cancel signal
 let allowClose = false;
 let menuState = {};
 const approved = new ApprovedPaths();
@@ -68,6 +79,8 @@ function createWindow() {
     minHeight: 400,
     title: 'TermCraft',
     backgroundColor: '#1b1d23',
+    // macOS: the toolbar is the title bar (window controls inset into it), like native Mac apps.
+    ...(process.platform === 'darwin' ? { titleBarStyle: 'hiddenInset', trafficLightPosition: { x: 14, y: 14 } } : {}),
     show: false,
     icon: ICON, // window/taskbar icon on Windows and Linux
     webPreferences: {
@@ -118,6 +131,9 @@ function createWindow() {
     scpService.closeAll();
     vnc.closeAll();
     rdp.closeAll();
+    batch.cancelAll();
+    tftp?.stop();
+    tftp = null;
   });
   refreshMenu();
 }
@@ -156,6 +172,82 @@ function isApprovedScript(file) {
     ...(s.keymap || []).filter((k) => k.action === 'script').map((k) => k.value),
   ].filter(Boolean).map((f) => path.resolve(String(f).replace(/^~/, os.homedir())));
   return configured.includes(resolved) || approved.isApprovedFile(resolved);
+}
+
+/** Native (not page-drawn) approval for a Launch Application command. */
+async function confirmLaunch(argv, command) {
+  const args = argv.slice(1);
+  const { response } = await dialog.showMessageBox(win, {
+    type: 'warning',
+    title: 'Launch Application',
+    message: 'Allow this button to run a program on your computer?',
+    detail: `Program: ${argv[0]}\n${args.length ? `Arguments: ${args.map((a) => JSON.stringify(a)).join(' ')}\n` : ''}`
+      + `\nCommand: ${command}\n\nOnly allow programs you trust. Button bars imported from someone else can contain commands.`,
+    buttons: ['Cancel', 'Run Once', 'Always Allow'],
+    defaultId: 0,
+    cancelId: 0,
+    noLink: true,
+  });
+  return [false, 'once', 'always'][response] || false;
+}
+
+/** This computer's IPv4 addresses (what a device needs for copy tftp://...). */
+function localAddresses() {
+  return Object.entries(os.networkInterfaces()).flatMap(([name, list]) => (list || [])
+    .filter((a) => a.family === 'IPv4' && !a.internal).map((a) => ({ name, address: a.address })));
+}
+
+/**
+ * Files to send, in order. Several files ("a series") are shown to the user to put in the order
+ * the device expects; only files picked in this dialog can be sent.
+ */
+async function chooseFilesToSend(tabId, protocol, multiple) {
+  const r = await dialog.showOpenDialog(win, { title: `Send ${protocol.toUpperCase()}`, properties: multiple ? ['openFile', 'multiSelections'] : ['openFile'] });
+  if (r.canceled || !r.filePaths.length) return null;
+  if (r.filePaths.length === 1) return r.filePaths;
+  const picked = new Set(r.filePaths);
+  const ordered = await request('orderFiles', { tabId, protocol, files: r.filePaths });
+  if (!Array.isArray(ordered) || !ordered.length) return null;
+  return ordered.filter((f, i) => picked.has(f) && ordered.indexOf(f) === i);
+}
+
+/** The device ran rz (wants files) or sz (is sending): run ZMODEM in that tab. */
+function startZmodem(tabId, direction, initial) {
+  const run = direction === 'send'
+    ? runXfer(tabId, 'zmodem', 'send', async (io, signal, onProgress) => {
+      const files = await chooseFilesToSend(tabId, 'zmodem', true);
+      if (!files) { io.write(zmodem.ABORT); return null; } // tell rz we're not sending anything
+      await zmodem.send(io, files, { signal, onProgress });
+      return files;
+    }, initial)
+    : runXfer(tabId, 'zmodem', 'receive', (io, signal, onProgress) => {
+      // Device-started downloads always go to ~/Downloads (a fixed place the page can't redirect).
+      const dir = path.join(os.homedir(), 'Downloads');
+      fs.mkdirSync(dir, { recursive: true });
+      return zmodem.receive(io, dir, { signal, onProgress });
+    }, initial);
+  run.catch(() => {}); // reported to the tab by runXfer
+}
+
+/** Run an XMODEM/YMODEM transfer on a tab, reporting progress to it. */
+async function runXfer(tabId, protocol, direction, fn, initial = null) {
+  if (xfers.has(tabId)) throw new Error('A file transfer is already running in this tab');
+  const signal = {};
+  xfers.set(tabId, signal);
+  let last = 0;
+  const onProgress = (p) => { const now = Date.now(); if (now - last > 200 || p.bytes === p.size) { last = now; send('xfer:progress', tabId, { protocol, direction, ...p }); } };
+  send('xfer:progress', tabId, { protocol, direction, state: 'waiting' });
+  try {
+    const files = await manager.rawTransfer(tabId, (io) => fn(io, signal, onProgress), initial);
+    if (!files) { send('xfer:progress', tabId, { protocol, direction, state: 'cancelled' }); return null; }
+    send('xfer:progress', tabId, { protocol, direction, state: 'done', files });
+    return files;
+  } catch (e) {
+    send('xfer:progress', tabId, { protocol, direction, state: 'failed', error: e.message });
+    throw e;
+  } finally {
+    xfers.delete(tabId);
+  }
 }
 
 function registerIpc() {
@@ -246,6 +338,110 @@ function registerIpc() {
     return r.filePaths;
   });
 
+  // ---- shared credentials and bulk host import ----
+  handle('cred:save', (c) => store.saveCredential(c));
+  handle('cred:delete', (id) => store.deleteCredential(id));
+  handle('hosts:parse', (text, defaults) => parseHosts(String(text || '').slice(0, 5e6), defaults || {}));
+  handle('hosts:import', (rows, opts) => store.importHosts(rows, opts || {}));
+
+  // ---- run commands on many sessions ----
+  // Output goes to ~/TermCraft Output/<date time> or to a folder the user picked in a dialog.
+  handle('batch:start', (runId, opts = {}) => {
+    let dir = opts.outputDir && approved.isChosenDir(opts.outputDir) ? path.resolve(opts.outputDir) : '';
+    if (opts.outputDir && !dir) throw new Error('Choose the output folder with Browse…');
+    const stamp = timestamp().replace(/[: ]/g, (c) => (c === ':' ? '' : '-')).replace(/\..*$/, '');
+    dir = path.join(dir || path.join(os.homedir(), 'TermCraft Output'), stamp);
+    return batch.start(String(runId), {
+      sessionIds: (opts.sessionIds || []).map(String), commands: (opts.commands || []).map(String),
+      concurrency: opts.concurrency, timeoutSec: opts.timeoutSec, outputDir: dir,
+    });
+  });
+  handle('batch:cancel', (runId) => batch.cancel(String(runId)));
+
+  // ---- TFTP server ----
+  const tftpStatus = () => ({ running: !!tftp?.running, ...(tftp ? { root: tftp.opts.root, port: tftp.opts.port, host: tftp.opts.host, allowWrite: tftp.opts.allowWrite, allowOverwrite: tftp.opts.allowOverwrite } : {}) });
+  handle('tftp:status', () => ({ ...tftpStatus(), defaultRoot: path.join(os.homedir(), 'TermCraft TFTP'), addresses: localAddresses() }));
+  handle('tftp:start', async (opts = {}) => {
+    tftp?.stop();
+    let root = opts.root ? path.resolve(String(opts.root).replace(/^~/, os.homedir())) : path.join(os.homedir(), 'TermCraft TFTP');
+    // The TFTP folder is shared on the network: only the default or a folder picked in a dialog.
+    if (root !== path.join(os.homedir(), 'TermCraft TFTP') && !approved.isChosenDir(root)) throw new Error('Choose the TFTP folder with Browse…');
+    fs.mkdirSync(root, { recursive: true });
+    const port = Number(opts.port) || 69;
+    if (!(port > 0 && port < 65536)) throw new Error('Invalid port');
+    const host = opts.host === '127.0.0.1' ? '127.0.0.1' : opts.host && localAddresses().some((a) => a.address === opts.host) ? opts.host : '0.0.0.0';
+    const server = new TftpServer({ root, port, host, allowWrite: !!opts.allowWrite, allowOverwrite: !!opts.allowOverwrite });
+    server.on('transfer', (t) => send('tftp:transfer', t));
+    server.on('log', (m) => send('tftp:log', m));
+    await server.start();
+    tftp = server;
+    return tftpStatus();
+  });
+  handle('tftp:stop', () => { tftp?.stop(); tftp = null; return tftpStatus(); });
+
+  // ---- XMODEM / YMODEM in a terminal tab ----
+  handle('xfer:send', async (tabId, protocol) => {
+    if (!['xmodem', 'xmodem-1k', 'ymodem', 'zmodem'].includes(protocol)) throw new Error('Unknown protocol');
+    const files = await chooseFilesToSend(tabId, protocol, protocol === 'ymodem' || protocol === 'zmodem');
+    if (!files) return null;
+    const proto = protocol === 'zmodem' ? zmodem : xmodem;
+    return runXfer(tabId, protocol, 'send', (io, signal, onProgress) => proto.send(io, files, { protocol, signal, onProgress }).then(() => files));
+  });
+  handle('xfer:receive', async (tabId, protocol) => {
+    if (!['xmodem', 'ymodem', 'zmodem'].includes(protocol)) throw new Error('Unknown protocol');
+    let dir; let name;
+    if (protocol === 'xmodem') {
+      const r = await dialog.showSaveDialog(win, { title: 'Receive XMODEM — save as', defaultPath: path.join(os.homedir(), 'Downloads', 'received.bin') });
+      if (r.canceled) return null;
+      dir = path.dirname(r.filePath); name = path.basename(r.filePath);
+      if (fs.existsSync(r.filePath)) fs.rmSync(r.filePath); // the user confirmed replacing it in the dialog
+    } else {
+      const r = await dialog.showOpenDialog(win, { title: 'Receive YMODEM — choose a folder', properties: ['openDirectory', 'createDirectory'] });
+      if (r.canceled) return null;
+      dir = r.filePaths[0];
+    }
+    const proto = protocol === 'zmodem' ? zmodem : xmodem;
+    return runXfer(tabId, protocol, 'receive', (io, signal, onProgress) => proto.receive(io, dir, { protocol, name, signal, onProgress }));
+  });
+  handle('xfer:cancel', (tabId) => { const s = xfers.get(tabId); if (s) { s.cancelled = true; s.onCancel?.(); } });
+
+  // ---- SSH keys ----
+  handle('keys:list', () => sshKeys.listPublicKeys());
+  handle('keys:generate', (opts = {}) => sshKeys.generateKey({ name: String(opts.name || ''), kind: String(opts.kind || 'ed25519'), passphrase: String(opts.passphrase || ''), comment: String(opts.comment || '') }));
+  handle('keys:install', async (sessionRef, pubFile) => {
+    const key = sshKeys.listPublicKeys().find((k) => k.file === pubFile);
+    if (!key) throw new Error('Choose a public key from ~/.ssh');
+    const session = store.resolveSession(sessionRef);
+    if (session.protocol !== 'ssh2') throw new Error('Keys can only be installed on SSH2 sessions');
+    session.forwards = [];
+    const conn = new SshConnection(session, { store, mode: 'tunnel', prompt: (req) => request('prompt', req) });
+    conn.on('error', () => {});
+    await conn.connect();
+    try {
+      const out = await new Promise((resolve, reject) => {
+        conn.exec(sshKeys.installCommand(key.line)).then((st) => {
+          let text = '';
+          const timer = setTimeout(() => { st.close?.(); reject(new Error('The server did not answer')); }, 15000);
+          st.on('data', (d) => { text += d; });
+          st.stderr?.on('data', (d) => { text += d; });
+          st.on('close', () => { clearTimeout(timer); resolve(text); });
+        }, reject);
+      });
+      if (/TERMCRAFT_KEY_PRESENT/.test(out)) return { status: 'present', privateKey: key.privateKey };
+      if (/TERMCRAFT_KEY_ADDED/.test(out)) return { status: 'added', privateKey: key.privateKey };
+      throw new Error(`The server did not accept the key (it may not be a Unix shell): ${out.trim().slice(0, 200)}`);
+    } finally { conn.close(); }
+  });
+
+  // ---- save terminal output ----
+  handle('file:saveOutput', async (defaultName, text) => {
+    const name = String(defaultName || 'output').replace(/[^\w.@ -]+/g, '_').slice(0, 100);
+    const r = await dialog.showSaveDialog(win, { title: 'Save Output As', defaultPath: path.join(os.homedir(), `${name}.txt`), filters: [{ name: 'Text', extensions: ['txt', 'log'] }] });
+    if (r.canceled) return null;
+    fs.writeFileSync(r.filePath, String(text), { mode: 0o600 });
+    return r.filePath;
+  });
+
   // ---- scripts ----
   handle('script:run', async (file, tabId) => {
     if (file && !isApprovedScript(file)) throw new Error('That script has not been chosen or configured in TermCraft');
@@ -283,7 +479,7 @@ function registerIpc() {
   handle('dialog:openDir', async (opts = {}) => {
     const r = await dialog.showOpenDialog(win, dialogOpts(opts, ['openDirectory', 'createDirectory']));
     if (r.canceled) return null;
-    approved.approveDir(r.filePaths[0]);
+    approved.chooseDir(r.filePaths[0]);
     return r.filePaths[0];
   });
   handle('file:readText', (file) => {
@@ -296,15 +492,12 @@ function registerIpc() {
     fs.writeFileSync(r.filePath, text);
     return r.filePath;
   });
-  // "Launch Application" buttons: run a user-defined local command, detached from TermCraft.
-  // Only commands that are actually configured on a saved button may run.
+  // "Launch Application" buttons: run a program configured on a saved button, without a shell,
+  // after the user approves that exact command in a native dialog (see launcher.js).
   handle('shell:run', (command) => {
     const configured = (store.getSettings().buttonBars || []).some((b) => b.buttons.some((x) => x.action === 'run' && x.value === command));
     if (!configured) throw new Error('Command is not configured on any button');
-    const child = require('child_process').spawn(command, { shell: true, detached: true, stdio: 'ignore' });
-    child.on('error', (e) => console.error('[run]', e));
-    child.unref();
-    return true;
+    return launcher.run(command);
   });
   handle('clipboard:read', () => clipboard.readText());
   handle('clipboard:write', (text) => clipboard.writeText(text));
@@ -322,6 +515,11 @@ function registerIpc() {
   });
   handle('shell:openExternal', (url) => isSafeExternalUrl(url) && shell.openExternal(url));
   handle('menu:state', (state) => { menuState = { ...menuState, ...state }; refreshMenu(); });
+  // Native parts (title bar, window controls, scrollbars, system dialogs) follow the app's theme.
+  handle('app:chrome', ({ source, bg } = {}) => {
+    if (['system', 'light', 'dark'].includes(source) && nativeTheme.themeSource !== source) nativeTheme.themeSource = source;
+    if (typeof bg === 'string' && /^#[0-9a-f]{6}$/i.test(bg)) win?.setBackgroundColor(bg);
+  });
   handle('app:about', () => ({ version: app.getVersion(), copyright: COPYRIGHT, notice: LICENSE_NOTICE, electron: process.versions.electron, chrome: process.versions.chrome, node: process.versions.node }));
   handle('app:keychainStatus', () => store.checkKeychain());
   handle('app:licenseText', () => fs.readFileSync(path.join(__dirname, '..', '..', 'LICENSE'), 'utf8'));
@@ -381,6 +579,7 @@ app.whenReady().then(() => {
   store = new Store(dataDir, safeStorage);
   manager = new ConnectionManager({
     store, send, request,
+    onZmodem: (tabId, direction, initial) => startZmodem(tabId, direction, initial),
     runScript: (file, tabId) => scripts.run(file.replace(/^~/, os.homedir()), tabId),
   });
   scripts = new ScriptEngine({ manager, request, store });
@@ -388,6 +587,8 @@ app.whenReady().then(() => {
   scpService = new ScpService({ store, request, send });
   vnc = new VncBridge({ store, request, send });
   rdp = new RdpService({ store, request, send });
+  launcher = new Launcher(path.join(dataDir, 'approved_commands.json'), { confirm: confirmLaunch });
+  batch = new BatchRunner({ store, request, send, protocols: PROTOCOLS });
   registerIpc();
   createWindow();
   app.on('activate', () => { if (!win) { allowClose = false; createWindow(); } });

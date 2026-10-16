@@ -2,6 +2,8 @@
 // Copyright (C) 2026 Gabriel Moreno and contributors
 import { h, contextMenu, confirmDialog, promptDialog, toast } from './dom.js';
 import { editSession, PROTOCOL_LABEL } from './session-editor.js';
+import { icon } from './icons.js';
+import { folderColorDialog, importHostsDialog, installKeyDialog, COMMAND_PROTOCOLS } from './tools.js';
 
 const ICON = { ssh2: '⇄', telnet: 'T', rlogin: 'R', serial: '⏚', raw: '◇', local: '›_', vnc: 'VNC', rdp: 'RDP' };
 
@@ -38,18 +40,16 @@ export class SessionManager {
         contextMenu(e.clientX, e.clientY, [
           { label: 'New Session…', action: () => this.newSession('') },
           { label: 'New Folder…', action: () => this.newFolder('') },
+          { label: 'Import Hosts…', action: () => importHostsDialog(this.app, '') },
         ]);
       },
     });
     root.append(
       h('div.sm-head', {},
         h('span.sm-title', {}, 'Sessions'),
-        h('button.icon-btn', { title: 'Connect', 'aria-label': 'Connect selected', onclick: () => this.connectSelected() }, '▶'),
-        h('button.icon-btn', { title: 'New session', 'aria-label': 'New session', onclick: () => this.newSession(this.currentFolder()) }, '＋'),
-        h('button.icon-btn', { title: 'New folder', 'aria-label': 'New folder', onclick: () => this.newFolder(this.currentFolder()) }, '📁'),
-        h('button.icon-btn', { title: 'Properties', 'aria-label': 'Edit selected', onclick: () => this.editSelected() }, '✎'),
-        h('button.icon-btn', { title: 'Delete', 'aria-label': 'Delete selected', onclick: () => this.deleteSelected() }, '🗑'),
-        h('button.icon-btn.sm-collapse', { title: 'Collapse Session Manager', 'aria-label': 'Collapse Session Manager', onclick: () => this.app.dispatch('toggleSessionManager') }, '«')),
+        h('button.icon-btn', { title: 'New session', 'aria-label': 'New session', onclick: () => this.newSession(this.currentFolder()) }, icon('plus', 16)),
+        h('button.icon-btn', { title: 'New folder', 'aria-label': 'New folder', onclick: () => this.newFolder(this.currentFolder()) }, icon('folderPlus', 16)),
+        h('button.icon-btn.sm-collapse', { title: 'Collapse Session Manager', 'aria-label': 'Collapse Session Manager', onclick: () => this.app.dispatch('toggleSessionManager') }, icon('chevronsLeft', 16))),
       h('div.sm-filter', {}, this.filterInput),
       this.treeEl);
   }
@@ -87,10 +87,11 @@ export class SessionManager {
     const isSel = this.selected?.kind === kind && this.selected.id === item.id;
     const label = kind === 'folder' ? item.name : (item.name || item.host);
     const sub = kind === 'session' ? (item.protocol === 'serial' ? item.serial?.path : item.protocol === 'local' ? 'local' : `${item.username ? item.username + '@' : ''}${item.host}`) : '';
+    const color = kind === 'folder' ? item.color : item.terminal?.tabColor;
     const el = h('div.node', {
-      class: `${kind}${isSel ? ' sel' : ''}`, role: 'treeitem', 'aria-selected': String(isSel),
+      class: `${kind}${isSel ? ' sel' : ''}${color ? ' colored' : ''}`, role: 'treeitem', 'aria-selected': String(isSel),
       'aria-expanded': kind === 'folder' ? String(!!open) : null,
-      style: { paddingLeft: 8 + depth * 14 + 'px' },
+      style: { paddingLeft: 8 + depth * 14 + 'px', ...(color ? { '--node-color': color } : {}) },
       draggable: true,
       title: kind === 'session' ? `${PROTOCOL_LABEL[item.protocol] || item.protocol} — ${sub}${item.notes ? '\n\n' + item.notes : ''}` : '',
       onclick: () => { this.selected = { kind, id: item.id }; if (kind === 'folder') this.toggle(item.id); else this.render(); },
@@ -145,9 +146,12 @@ export class SessionManager {
     if (kind === 'folder') {
       contextMenu(e.clientX, e.clientY, [
         { label: 'Connect All in Folder', action: () => this.connectFolder(item.id) },
+        { label: 'Run Commands on Folder…', action: () => this.app.runCommands({ folderId: item.id }) },
         '-',
         { label: 'New Session…', action: () => this.newSession(item.id) },
         { label: 'New Folder…', action: () => this.newFolder(item.id) },
+        { label: 'Import Hosts Here…', action: () => importHostsDialog(this.app, item.id) },
+        { label: 'Folder Color…', action: () => folderColorDialog(this.app, item) },
         { label: 'Rename…', hint: 'F2', action: () => this.renameSelected() },
         { label: 'Delete Folder', action: () => this.deleteSelected() },
       ]);
@@ -157,6 +161,8 @@ export class SessionManager {
       { label: 'Connect in Tab', action: () => this.app.openSession(item) },
       { label: 'Connect SFTP Tab', action: () => this.app.openSftp(item), disabled: item.protocol !== 'ssh2' },
       { label: 'SCP Transfer Manager', action: () => this.app.openScp(item), disabled: item.protocol !== 'ssh2' },
+      { label: 'Run Commands…', action: () => this.app.runCommands({ sessionIds: [item.id] }), disabled: !COMMAND_PROTOCOLS.has(item.protocol) },
+      { label: 'Install SSH Key…', action: () => installKeyDialog(this.app, item), disabled: item.protocol !== 'ssh2' },
       '-',
       { label: 'Properties…', action: () => this.editSelected() },
       { label: 'Duplicate', action: () => this.duplicate(item) },

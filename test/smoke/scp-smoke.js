@@ -37,6 +37,7 @@ function startServer(root, stats) {
 }
 
 module.exports = async function smoke(win, { store }) {
+  if (process.platform === 'win32') { console.log('[smoke] PASS skipped on Windows (the test server needs a Unix scp)'); return; }
   const out = process.env.TERMCRAFT_SHOTS || path.join(os.tmpdir(), 'termcraft-shots');
   fs.mkdirSync(out, { recursive: true });
   const js = (code) => win.webContents.executeJavaScript(`Promise.resolve(${code}).then((r) => (r && typeof r === 'object' ? null : r))`);

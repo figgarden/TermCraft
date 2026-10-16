@@ -1,7 +1,8 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 Gabriel Moreno and contributors
 import { h, showDialog, fillForm, collectForm, field, input, number, checkbox, select, listEditor, toast } from './dom.js';
-import { schemeOptions } from './schemes.js';
+import { schemeSelect } from './schemes.js';
+import { credentialOptions, credentialsDialog, colorPickerField } from './tools.js';
 
 const PROTOCOLS = [['ssh2', 'SSH2'], ['telnet', 'Telnet'], ['rlogin', 'Rlogin'], ['serial', 'Serial'], ['raw', 'Raw TCP'], ['local', 'Local Shell'], ['vnc', 'VNC'], ['rdp', 'RDP']];
 const DEFAULT_PORTS = { ssh2: 22, telnet: 23, rlogin: 513, raw: 23, vnc: 5900, rdp: 3389 };
@@ -61,6 +62,8 @@ export async function editSession(app, original, { title = 'Session Options', pa
   }, 'Browse…');
 
   const sshSessions = tree.sessions.filter((x) => x.protocol === 'ssh2' && x.id !== s.id);
+  const credSel = select('auth.credentialId', credentialOptions(app));
+  const tabColor = colorPickerField(s.terminal?.tabColor);
   const panels = {
     Connection: h('div.form', {},
       field('Name', input('name', { placeholder: 'My server', autofocus: true })),
@@ -69,7 +72,6 @@ export async function editSession(app, original, { title = 'Session Options', pa
       h('div.net-only', {},
         field('Hostname', input('host', { placeholder: 'host.example.com or 10.0.0.1' })),
         field('Port', number('port', { min: 1, max: 65535 })),
-        h('div.not-raw', {}, field('Username', input('username', { placeholder: '(prompt)' }))),
         h('div.remote-only', {}, field('Connect through SSH session', select('tunnel.sshSessionId', [['', '(none — connect directly)'], ...sshSessions.map((x) => [x.id, x.name || x.host])]),
           'Reach the remote desktop through an SSH tunnel to this saved session (recommended for VNC, which is often unencrypted)'))),
       h('div.serial-only', {},
@@ -80,6 +82,7 @@ export async function editSession(app, original, { title = 'Session Options', pa
           field('Parity', select('serial.parity', ['none', 'odd', 'even', 'mark', 'space'])),
           field('Stop bits', select('serial.stopBits', ['1', '1.5', '2']))),
         field('Flow control', select('serial.flowControl', [['none', 'None'], ['rtscts', 'RTS/CTS'], ['xonxoff', 'XON/XOFF']]))),
+      h('div.user-field', {}, field('Username', input('username', { placeholder: '(prompt)' }))),
       h('div.local-only', {},
         field('Shell', input('local.shell', { placeholder: app.info.defaultShell }), 'Leave blank for the system default shell'),
         field('Arguments', input('local.args', { placeholder: app.platform === 'win32' ? '' : '-l' })),
@@ -87,6 +90,10 @@ export async function editSession(app, original, { title = 'Session Options', pa
       field('Notes', h('textarea', { dataset: { path: 'notes' }, rows: 3 }))),
 
     Authentication: h('div.form', {},
+      field('Credential', h('div.row', {}, credSel,
+        h('button.small', { type: 'button', onclick: async () => { const cur = credSel.value; await credentialsDialog(app); credSel.replaceChildren(...credentialOptions(app).map(([v, l]) => h('option', { value: v }, l))); credSel.value = cur; } }, 'Manage…')),
+        'A shared login (e.g. your TACACS or domain account). Its username, password and key are used instead of the ones below.'),
+      h('div.inband-only', {}, checkbox('auth.autoLogin', 'Log in automatically: answer “Username:” and “Password:” prompts')),
       h('fieldset.ssh-auth-only', {}, h('legend', {}, 'Methods (tried in this order)'), ...methodBoxes),
       field('Password', passwordInput),
       h('div.row', {},
@@ -115,7 +122,7 @@ export async function editSession(app, original, { title = 'Session Options', pa
         field('Height', number('rdp.height', { min: 480, max: 4320 }))),
       checkbox('rdp.multimon', 'Use all monitors'),
       checkbox('rdp.admin', 'Connect to the administrative (console) session'),
-      h('p.hint', {}, 'TermCraft opens the session (and SSH tunnel, if set) with your system RDP client: Windows App on macOS, Remote Desktop Connection on Windows, FreeRDP or Remmina on Linux. Change the client in Global Options.')),
+      h('p.hint', {}, 'TermCraft opens the session (and SSH tunnel, if set) with your system RDP client: Windows App on macOS, Remote Desktop Connection on Windows, FreeRDP or Remmina on Linux. Change the client in Settings.')),
 
     SSH: h('div.form', {},
       field('Jump host / firewall', select('ssh.jumpSessionId', [['', '(none — connect directly)'], ...sshSessions.map((x) => [x.id, x.name || x.host])]),
@@ -150,11 +157,13 @@ export async function editSession(app, original, { title = 'Session Options', pa
       checkbox('terminal.useRemoteTitle', 'Use remote window title for tab name')),
 
     Appearance: h('div.form', {},
-      field('Color scheme', select('terminal.colorScheme', schemeOptions()), 'Follow app theme uses the colors of the theme chosen in Global Options'),
-      field('Font family', input('terminal.fontFamily', { placeholder: '(global default)' })),
-      field('Font size', number('terminal.fontSize', { min: 0, max: 72 }), '0 = global default'),
+      field('Terminal colors', schemeSelect(h, '', `Default (${app.settings.defaultSession?.terminal?.colorScheme || 'match theme'})`, { dataset: { path: 'terminal.colorScheme' } }),
+        'Default follows Settings → Appearance. Pick a palette to make this session look different.'),
+      field('Font family', input('terminal.fontFamily', { placeholder: 'Default (Settings → Appearance)' })),
+      field('Font size', number('terminal.fontSize', { min: 0, max: 72 }), '0 = default'),
       field('Cursor', select('terminal.cursorStyle', [['block', 'Block'], ['underline', 'Underline'], ['bar', 'Vertical bar']])),
       checkbox('terminal.cursorBlink', 'Blinking cursor'),
+      field('Tab color', tabColor.el, 'Mark production or customer sessions at a glance. None = use the folder’s color.'),
       field('Button bar', select('terminal.buttonBar', [['', '(whichever bar is selected)'], ...(app.settings.buttonBars || []).map((b) => [b.id, b.name])]),
         'Show this button bar automatically when this session’s tab is active')),
 
@@ -205,14 +214,16 @@ export async function editSession(app, original, { title = 'Session Options', pa
   const onProtocol = (p) => {
     const visible = (cat, on) => { const b = nav.querySelector(`[data-cat="${cat}"]`); if (b) b.hidden = !on; };
     for (const el of body.querySelectorAll('.net-only')) el.hidden = p === 'serial' || p === 'local';
-    for (const el of body.querySelectorAll('.not-raw')) el.hidden = p === 'raw';
+    for (const el of body.querySelectorAll('.user-field')) el.hidden = p === 'raw' || p === 'local';
     for (const el of body.querySelectorAll('.serial-only')) el.hidden = p !== 'serial';
     for (const el of body.querySelectorAll('.local-only')) el.hidden = p !== 'local';
     const rd = REMOTE_DESKTOP.has(p);
     for (const el of body.querySelectorAll('.remote-only')) el.hidden = !rd;
     for (const el of body.querySelectorAll('.ssh-auth-only')) el.hidden = p !== 'ssh2';
     for (const el of body.querySelectorAll('.rdp-auth-only')) el.hidden = p !== 'rdp';
-    visible('Authentication', p === 'ssh2' || rd);
+    const inband = ['telnet', 'rlogin', 'serial'].includes(p);
+    for (const el of body.querySelectorAll('.inband-only')) el.hidden = !inband;
+    visible('Authentication', p === 'ssh2' || rd || inband);
     visible('SSH', p === 'ssh2');
     visible('Port Forwarding', p === 'ssh2');
     visible('VNC', p === 'vnc');
@@ -224,6 +235,9 @@ export async function editSession(app, original, { title = 'Session Options', pa
   };
 
   fillForm(body, s);
+  // Show the session's own choices, not the merged defaults, so "Default" stays default.
+  body.querySelector('[data-path="terminal.colorScheme"]').value = original?.terminal?.colorScheme || '';
+  body.querySelector('[data-path="terminal.fontFamily"]').value = original?.terminal?.fontFamily || '';
   serialPort.value = s.serial?.path || '';
   onProtocol(s.protocol);
   show('Connection');
@@ -260,6 +274,7 @@ export async function editSession(app, original, { title = 'Session Options', pa
   out.serial.baudRate = Number(out.serial.baudRate);
   out.serial.dataBits = Number(out.serial.dataBits);
   out.serial.stopBits = Number(out.serial.stopBits);
+  out.terminal = { ...(out.terminal || {}), tabColor: tabColor.value };
   if (!out.name) out.name = out.protocol === 'serial' ? out.serial.path : out.protocol === 'local' ? 'Local Shell' : out.host;
   delete out.auth.hasPassword;
   delete out.auth.hasPassphrase;

@@ -188,3 +188,53 @@ export function cssVars(t) {
     '--phosphor': u.accent, '--term-bg': t.term.background,
   };
 }
+
+// ---- appearance: a theme family + Light / Dark / Auto (like macOS) ---------------------------
+
+/** Families in display order, each with its light and dark variants. */
+export const FAMILIES = (() => {
+  const map = new Map();
+  for (const t of LIST) {
+    if (!map.has(t.family)) map.set(t.family, { name: t.family, light: [], dark: [] });
+    map.get(t.family)[t.dark ? 'dark' : 'light'].push(t.name);
+  }
+  return [...map.values()];
+})();
+
+export const familyOf = (themeName) => FAMILIES.find((f) => f.light.includes(themeName) || f.dark.includes(themeName));
+
+/** Display name of a variant inside its family ("Catppuccin Mocha" -> "Mocha", "Rosé Pine" -> "Main"). */
+export function variantLabel(themeName) {
+  const f = familyOf(themeName);
+  if (!f) return themeName;
+  const rest = themeName.startsWith(f.name) ? themeName.slice(f.name.length).trim() : themeName;
+  return rest || (THEMES[themeName].dark ? 'Night' : 'Day');
+}
+
+/**
+ * The appearance settings, filled in from older settings when missing:
+ * { appearance: 'auto'|'light'|'dark', lightTheme, darkTheme }.
+ * An old single theme becomes the matching mode, paired with its family's other variant.
+ */
+export function appearanceOf(settings = {}) {
+  let { appearance, lightTheme, darkTheme } = settings;
+  if (!['auto', 'light', 'dark'].includes(appearance)) {
+    const legacy = settings.theme === 'dark' ? DEFAULT_DARK : settings.theme === 'light' ? DEFAULT_LIGHT : settings.theme;
+    const t = THEMES[legacy];
+    appearance = t ? (t.dark ? 'dark' : 'light') : 'auto';
+    if (t) {
+      const f = familyOf(t.name);
+      if (t.dark) { darkTheme = darkTheme || t.name; lightTheme = lightTheme || f.light[0]; } else { lightTheme = lightTheme || t.name; darkTheme = darkTheme || f.dark[0]; }
+    }
+  }
+  if (!THEMES[lightTheme] || THEMES[lightTheme].dark) lightTheme = DEFAULT_LIGHT;
+  if (!THEMES[darkTheme] || !THEMES[darkTheme].dark) darkTheme = DEFAULT_DARK;
+  return { appearance, lightTheme, darkTheme };
+}
+
+/** The theme to show now. */
+export function currentTheme(settings, prefersDark) {
+  const a = appearanceOf(settings);
+  const dark = a.appearance === 'dark' || (a.appearance === 'auto' && prefersDark);
+  return THEMES[dark ? a.darkTheme : a.lightTheme];
+}

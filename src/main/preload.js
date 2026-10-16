@@ -26,7 +26,15 @@ contextBridge.exposeInMainWorld('api', {
     importSessions: invoke('store:import'),
     importSshConfig: invoke('store:importSshConfig'),
     saveCredentials: invoke('store:saveCredentials'),
+    saveCredential: invoke('cred:save'),
+    deleteCredential: invoke('cred:delete'),
+    parseHosts: invoke('hosts:parse'),
+    importHosts: invoke('hosts:import'),
   },
+  batch: { start: invoke('batch:start'), cancel: invoke('batch:cancel'), onUpdate: on('batch:update'), onDone: on('batch:done') },
+  tftp: { status: invoke('tftp:status'), start: invoke('tftp:start'), stop: invoke('tftp:stop'), onTransfer: on('tftp:transfer'), onLog: on('tftp:log') },
+  xfer: { send: invoke('xfer:send'), receive: invoke('xfer:receive'), cancel: invoke('xfer:cancel'), onProgress: on('xfer:progress') },
+  keys: { list: invoke('keys:list'), generate: invoke('keys:generate'), install: invoke('keys:install') },
   conn: {
     open: invoke('conn:open'),
     write: (tabId, data) => ipcRenderer.send('conn:write', tabId, data),
@@ -72,7 +80,7 @@ contextBridge.exposeInMainWorld('api', {
   },
   script: { run: invoke('script:run'), cancel: invoke('script:cancel'), examplesDir: invoke('app:examplesDir') },
   dialog: { openFile: invoke('dialog:openFile'), openDir: invoke('dialog:openDir'), openPaths: invoke('dialog:openPaths') },
-  file: { readText: invoke('file:readText'), saveText: invoke('file:saveText'), pathFor: (file) => webUtils.getPathForFile(file) },
+  file: { readText: invoke('file:readText'), saveText: invoke('file:saveText'), saveOutput: invoke('file:saveOutput'), pathFor: (file) => webUtils.getPathForFile(file) },
   clipboard: { read: invoke('clipboard:read'), write: invoke('clipboard:write') },
   app: {
     info: invoke('app:info'),
@@ -83,6 +91,7 @@ contextBridge.exposeInMainWorld('api', {
     licenseText: invoke('app:licenseText'),
     keychainStatus: invoke('app:keychainStatus'),
     setMenuState: invoke('menu:state'),
+    setChrome: invoke('app:chrome'),
   },
   onMenu: on('menu:action'),
   /** Handle requests from the main process (prompts, script queries). Handler may return a promise. */

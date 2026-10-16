@@ -4,9 +4,13 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws://127.0.0.1:*; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self' 'wasm-unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; font-src 'self' data:; connect-src 'self' ws://127.0.0.1:*; worker-src 'self' blob:; object-src 'none'; base-uri 'none'; form-action 'none'; frame-src 'none'">
   <title>TermCraft</title>
   <link rel="stylesheet" href="../../node_modules/@xterm/xterm/css/xterm.css">
+  <!-- JetBrains Mono (SIL OFL 1.1), bundled so terminals look the same on every machine -->
+  <link rel="stylesheet" href="../../node_modules/@fontsource/jetbrains-mono/400.css">
+  <link rel="stylesheet" href="../../node_modules/@fontsource/jetbrains-mono/700.css">
+  <link rel="stylesheet" href="../../node_modules/@fontsource/jetbrains-mono/400-italic.css">
   <link rel="stylesheet" href="css/app.css">
 </head>
 <body>

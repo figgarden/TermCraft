@@ -6,6 +6,8 @@ const path = require('path');
 const { SshConnection } = require('./protocols/ssh');
 const { TelnetConnection, RawConnection, RloginConnection, SerialConnection, LocalShellConnection } = require('./protocols/simple');
 const { expandEscapes, stripAnsi, expandLogPath, timestamp } = require('./util');
+const { createAutoLogin } = require('./auto-login');
+const zmodem = require('./zmodem');
 
 const PROTOCOLS = {
   ssh2: SshConnection,
@@ -100,6 +102,7 @@ class ConnectionManager {
     t.connectedAt = Date.now();
     this._setState(t, 'connected', { connectedAt: t.connectedAt, username: conn.username || session.username });
 
+    t.autoLogin = createAutoLogin(session);
     if (session.logonActions?.length) t.logon = { index: 0 };
     this._advanceLogon(t);
     this._startAntiIdle(t);
@@ -127,6 +130,22 @@ class ConnectionManager {
   }
 
   _onData(t, buf) {
+    // During an XMODEM/YMODEM/ZMODEM transfer the bytes belong to the transfer, not the screen.
+    if (t.raw) { t.raw(buf); return; }
+    // The device started ZMODEM ("rz" waits for files, "sz" sends): hand the rest to a transfer.
+    if (this.deps.onZmodem && this.deps.store.getSettings().zmodemAutoStart !== false) {
+      const scan = t.zTail ? Buffer.concat([t.zTail, buf]) : buf;
+      const hit = zmodem.detect(scan);
+      if (hit) {
+        const before = scan.subarray(0, hit.at).subarray(t.zTail?.length || 0);
+        const rest = scan.subarray(hit.at);
+        t.zTail = null;
+        if (before.length) this._onData(t, before);
+        this.deps.onZmodem(t.tabId, hit.direction, rest);
+        return;
+      }
+      t.zTail = scan.subarray(-5);
+    }
     const text = t.decoder.decode(buf, { stream: true });
     if (!text) return;
     // Coalesce bursts into a single IPC message per tick.
@@ -143,6 +162,8 @@ class ConnectionManager {
     this._writeLog(t, text);
     const plain = stripAnsi(text);
     t.recent = (t.recent + plain).slice(-MATCH_WINDOW);
+    const answer = t.autoLogin?.feed(plain);
+    if (answer) this.write(t.tabId, answer, true);
     this._advanceLogon(t);
     for (const w of [...t.waiters]) w.feed(plain);
   }
@@ -214,6 +235,25 @@ class ConnectionManager {
   }
 
   closeAll() { for (const id of [...this.tabs.keys()]) this.close(id, true); }
+
+  /**
+   * Hand a connected tab's byte stream to `fn(io)` (file transfer protocols) until it finishes.
+   * io = { write(Buffer), onData(cb) -> unsubscribe }.
+   */
+  async rawTransfer(tabId, fn, initial = null) {
+    const t = this.tabs.get(tabId);
+    if (!t || t.state !== 'connected') throw new Error('Connect the tab first');
+    if (t.raw) throw new Error('A file transfer is already running in this tab');
+    const subs = new Set();
+    // Bytes that arrive before the protocol starts listening (e.g. while a file dialog is open) are kept.
+    const queued = initial?.length ? [initial] : [];
+    t.raw = (buf) => { if (subs.size) for (const cb of subs) cb(buf); else queued.push(buf); };
+    const io = {
+      write: (b) => t.conn.write(b),
+      onData: (cb) => { subs.add(cb); while (queued.length) cb(queued.shift()); return () => subs.delete(cb); },
+    };
+    try { return await fn(io); } finally { t.raw = null; t.zTail = null; }
+  }
 
   // ---- logging -------------------------------------------------------
   startLog(tabId, file) {

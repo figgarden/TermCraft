@@ -24,7 +24,7 @@ export const MENU_FUNCTIONS = [
   ['sendAscii', 'Send ASCII File…'], ['runScript', 'Run Script…'], ['toggleBroadcast', 'Send Keystrokes to All Tabs'],
   ['toggleSessionManager', 'Show/Hide Session Manager'], ['toggleCommandWindow', 'Show/Hide Command Window'], ['focusMode', 'Maximize Terminal Area'],
   ['layout:tabs', 'Layout: Tabs'], ['layout:tile-h', 'Layout: Stacked'], ['layout:tile-v', 'Layout: Side by Side'], ['layout:grid', 'Layout: Grid'],
-  ['nextTab', 'Next Tab'], ['prevTab', 'Previous Tab'], ['sessionOptions', 'Session Options…'], ['globalOptions', 'Global Options…'],
+  ['nextTab', 'Next Tab'], ['prevTab', 'Previous Tab'], ['sessionOptions', 'Session Options…'], ['globalOptions', 'Settings…'],
 ];
 const MENU_LABEL = Object.fromEntries(MENU_FUNCTIONS);
 
@@ -147,9 +147,11 @@ export class ButtonBars {
         case 'script': await app.runScript(b.value || undefined); break;
         case 'connect': await app.connectTarget(b.value); break;
         case 'menu': await app.dispatch(b.value); break;
-        case 'run': await window.api.app.run(b.value); toast(`Launched: ${b.value}`); break;
+        case 'run': if (await window.api.app.run(b.value)) toast(`Launched: ${b.value}`); break;
         default: toast(`Unknown button function "${b.action}"`, 'error');
       }
+    } catch (e) {
+      toast(`${b.label || 'Button'}: ${String(e?.message || e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')}`, 'error');
     } finally {
       if (b.action !== 'connect') tab?.focus();
     }
@@ -363,7 +365,7 @@ async function mapButtonDialog(app, btn, isNew, bars, barId) {
     script: field('Script', h('div.row', {}, scriptPath, h('button.small', { type: 'button', onclick: async () => { const f = await window.api.dialog.openFile({ title: 'Choose script', filters: [{ name: 'JavaScript', extensions: ['js'] }] }); if (f) scriptPath.value = f; } }, 'Browse…'))),
     connect: field('Session', h('div', {}, connectTarget, sessionNames), 'Opens the session in a new tab'),
     menu: field('Menu function', menuFn),
-    run: field('Command', runCmd, 'Runs on this computer, e.g. to open an editor or a ping window'),
+    run: field('Command', runCmd, 'A program and its arguments, run on this computer without a shell (no pipes or ;). Quote arguments with spaces. You approve each new command the first time it runs.'),
   };
   editors.sendAll = editors.send;
   const set = { send: sendText, sendAll: sendText, script: scriptPath, connect: connectTarget, menu: menuFn, run: runCmd };

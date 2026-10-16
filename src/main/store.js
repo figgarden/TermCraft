@@ -15,13 +15,16 @@ const DEFAULT_SESSION = {
   host: '',
   port: 22,
   username: '',
-  auth: { methods: ['publickey', 'keyboard-interactive', 'password'], keyFile: '', useAgent: true, savePassword: true },
+  // credentialId: use a shared login from the Credentials list instead of this session's own.
+  // autoLogin: answer Username:/Password: prompts on Telnet, Rlogin and Serial connections.
+  auth: { methods: ['publickey', 'keyboard-interactive', 'password'], keyFile: '', useAgent: true, savePassword: true, credentialId: '', autoLogin: true },
   ssh: { keepAlive: 30, compression: false, agentForward: false, x11: false, jumpSessionId: '', trace: false, readyTimeout: 20 },
   forwards: [],
   terminal: {
     termType: 'xterm-256color', scrollback: 10000, encoding: 'utf-8', backspace: 'del',
     colorScheme: '', fontFamily: '', fontSize: 0, cursorStyle: 'block', cursorBlink: true,
     useRemoteTitle: false,
+    tabColor: '', // '' = inherit from folder
   },
   logging: { enabled: false, path: '~/TermCraft Logs/%S-%Y%M%D-%h%m%s.log', timestamps: false, append: true, stripAnsi: true },
   logonActions: [],
@@ -39,7 +42,9 @@ const DEFAULT_SESSION = {
 };
 
 const DEFAULT_SETTINGS = {
-  theme: 'TermCraft Dark',
+  theme: 'system', // legacy; the renderer moves it to appearance/lightTheme/darkTheme
+  lineHeight: '1.15',
+  terminalPadding: 'comfortable', // compact | comfortable | spacious
   copyOnSelect: true,
   rightClickPaste: true,
   confirmMultilinePaste: true,
@@ -49,7 +54,10 @@ const DEFAULT_SETTINGS = {
   fontSize: 14,
   showSessionManager: true,
   showButtonBar: true,
-  showCommandWindow: false,
+  showCommandWindow: false, // the Command Buffer
+  bufferMode: 'command', // command (SecureCRT-style strip) | script (WinFIOL-style editor)
+  bufferPosition: 'bottom', // bottom | side
+  bufferText: '',
   showStatusBar: true,
   tabActivityIndicator: true,
   layout: 'tabs',
@@ -96,6 +104,8 @@ const DEFAULT_SETTINGS = {
   windowBounds: null,
   recentScripts: [],
   rdpClient: '', // custom RDP client command; tokens {file} {host} {port} {user}
+  zmodemAutoStart: true, // start ZMODEM when a device runs rz/sz (downloads go to ~/Downloads)
+  inlineImages: true, // Kitty graphics, Sixel and iTerm2 images in terminals (applies to new tabs)
 };
 
 function deepMerge(base, over) {
@@ -121,10 +131,11 @@ class Store {
       knownHosts: path.join(dir, 'known_hosts.json'),
     };
     this.data = {
-      sessions: this._read(this.files.sessions, { folders: [], sessions: [] }),
+      sessions: this._read(this.files.sessions, { folders: [], sessions: [], credentials: [] }),
       settings: deepMerge(DEFAULT_SETTINGS, Store._migrateSettings(this._read(this.files.settings, {}))),
       knownHosts: this._read(this.files.knownHosts, {}),
     };
+    if (!Array.isArray(this.data.sessions.credentials)) this.data.sessions.credentials = [];
     // Sessions saved with the old fixed default scheme now follow the app theme.
     for (const s of this.data.sessions.sessions || []) {
       if (s.terminal?.colorScheme === 'TermCraft Dark') s.terminal.colorScheme = '';
@@ -180,7 +191,8 @@ class Store {
    * "TermCraft Safe Storage" prompt appears). Returns 'none' | 'ok' | 'denied'.
    */
   checkKeychain() {
-    const hasSecrets = this.data.sessions.sessions.some((s) => SECRET_FIELDS.some((f) => String(s.auth?.[f] || '').startsWith('enc:')));
+    const hasSecrets = [...this.data.sessions.sessions.map((s) => s.auth), ...this.data.sessions.credentials]
+      .some((a) => SECRET_FIELDS.some((f) => String(a?.[f] || '').startsWith('enc:')));
     if (!hasSecrets || !this.safeStorage) return 'none';
     try {
       if (!this.safeStorage.isEncryptionAvailable()) return 'denied';
@@ -215,6 +227,7 @@ class Store {
     return {
       folders: this.data.sessions.folders,
       sessions: this.data.sessions.sessions.map((s) => this._sanitize(s)),
+      credentials: this.data.sessions.credentials.map((c) => this._sanitizeCredential(c)),
     };
   }
 
@@ -247,7 +260,50 @@ class Store {
     for (const f of SECRET_FIELDS) {
       s.auth[f] = stored ? this.decrypt(stored.auth?.[f]) : (raw.auth?.[f] || '');
     }
+    // A shared credential supplies the login; the session's own values fill any gaps.
+    const cred = s.auth.credentialId && this.getCredential(s.auth.credentialId);
+    if (cred) {
+      s.username = cred.username || s.username;
+      s.auth.keyFile = cred.keyFile || s.auth.keyFile;
+      for (const f of SECRET_FIELDS) s.auth[f] = this.decrypt(cred[f]) || s.auth[f];
+      s.auth.credentialName = cred.name;
+    }
     return s;
+  }
+
+  // ---- shared credentials ----------------------------------------------
+  /** A login (username + password and/or key) shared by many sessions, e.g. a TACACS or AD account. */
+  getCredential(id) { return this.data.sessions.credentials.find((c) => c.id === id); }
+
+  _sanitizeCredential(c) {
+    const out = { ...c };
+    for (const f of SECRET_FIELDS) { out['has' + f[0].toUpperCase() + f.slice(1)] = !!c[f]; delete out[f]; }
+    out.usedBy = this.data.sessions.sessions.filter((s) => s.auth?.credentialId === c.id).length;
+    return out;
+  }
+
+  /** Insert/update a credential. Secrets: undefined keeps, '' clears, a string replaces. */
+  saveCredential(cred) {
+    const list = this.data.sessions.credentials;
+    const existing = cred.id ? this.getCredential(cred.id) : null;
+    const next = {
+      id: existing?.id || newId('c_'),
+      name: String(cred.name ?? existing?.name ?? '').trim() || String(cred.username || 'Login'),
+      username: String(cred.username ?? existing?.username ?? ''),
+      keyFile: String(cred.keyFile ?? existing?.keyFile ?? ''),
+      notes: String(cred.notes ?? existing?.notes ?? ''),
+    };
+    for (const f of SECRET_FIELDS) next[f] = cred[f] === undefined ? existing?.[f] || '' : this.encrypt(String(cred[f]));
+    if (existing) Object.assign(existing, next); else list.push(next);
+    this._write('sessions');
+    return this._sanitizeCredential(existing || next);
+  }
+
+  /** Delete a credential; sessions that used it fall back to their own login. */
+  deleteCredential(id) {
+    this.data.sessions.credentials = this.data.sessions.credentials.filter((c) => c.id !== id);
+    for (const s of this.data.sessions.sessions) if (s.auth?.credentialId === id) s.auth.credentialId = '';
+    this._write('sessions');
   }
 
   /**
@@ -281,6 +337,13 @@ class Store {
    */
   saveCredentials(ref, creds) {
     const stored = typeof ref === 'string' ? this.getSession(ref) : ref?.id ? this.getSession(ref.id) : null;
+    // A session using a shared credential updates that credential, so every device using it gets
+    // the new password (e.g. after a TACACS/AD password change).
+    const shared = stored?.auth?.credentialId && this.getCredential(stored.auth.credentialId);
+    if (shared) {
+      this.saveCredential({ id: shared.id, ...(creds.username ? { username: creds.username } : {}), password: creds.password, passphrase: creds.passphrase });
+      return this._sanitize(stored);
+    }
     const base = stored ? JSON.parse(JSON.stringify(stored)) : JSON.parse(JSON.stringify(ref));
     base.auth = { ...(base.auth || {}) };
     // saveSession treats undefined secrets as "keep stored value"; only pass the new ones.
@@ -341,6 +404,9 @@ class Store {
     for (const s of out.sessions) {
       for (const f of SECRET_FIELDS) s.auth[f] = includeSecrets ? this.decrypt(s.auth?.[f]) : '';
     }
+    for (const c of out.credentials || []) {
+      for (const f of SECRET_FIELDS) c[f] = includeSecrets ? this.decrypt(c[f]) : '';
+    }
     return { format: 'termcraft-sessions', version: 1, ...out };
   }
 
@@ -352,6 +418,12 @@ class Store {
    */
   importSessions(data, parentFolderName = 'Imported') {
     const root = this.saveFolder({ name: parentFolderName, parent: '' });
+    const credMap = new Map();
+    for (const c of Array.isArray(data.credentials) ? data.credentials : []) {
+      if (!c || typeof c !== 'object' || !c.id) continue;
+      const secrets = Object.fromEntries(SECRET_FIELDS.filter((f) => c[f]).map((f) => [f, String(c[f])]));
+      credMap.set(c.id, this.saveCredential({ name: c.name, username: c.username, keyFile: c.keyFile, notes: c.notes, ...secrets }).id);
+    }
     const idMap = new Map();
     for (const f of data.folders || []) idMap.set(f.id, newId('f_'));
     for (const f of data.folders || []) {
@@ -364,6 +436,7 @@ class Store {
       const copy = { ...s, id: undefined, parent: s.parent ? idMap.get(s.parent) || root.id : root.id };
       copy.auth = { ...(s.auth || {}) };
       for (const f of SECRET_FIELDS) if (!copy.auth[f]) delete copy.auth[f];
+      copy.auth.credentialId = credMap.get(copy.auth.credentialId) || '';
       if (copy.logonScript || copy.local?.shell || copy.local?.args) {
         cleared++;
         copy.logonScript = '';
@@ -374,6 +447,54 @@ class Store {
     }
     this._write('sessions');
     return { count: n, cleared };
+  }
+
+  /**
+   * Create sessions from parsed host rows (see host-import.js). Folder paths like "HQ/Core" are
+   * created under `opts.folder` (a folder id, '' = root); credentials and jump hosts are matched by name.
+   * @returns {{ created: number, skipped: number, warnings: string[] }}
+   */
+  importHosts(rows, opts = {}) {
+    const warnings = [];
+    const { folders, sessions } = this.data.sessions;
+    const folderFor = (path) => {
+      let parent = opts.folder || '';
+      for (const part of String(path || '').split('/').map((x) => x.trim()).filter(Boolean)) {
+        let f = folders.find((x) => (x.parent || '') === parent && x.name === part);
+        if (!f) { f = { id: newId('f_'), name: part.slice(0, 200), parent }; folders.push(f); }
+        parent = f.id;
+      }
+      return parent;
+    };
+    const credByName = (name) => this.data.sessions.credentials.find((c) => c.name.toLowerCase() === name.toLowerCase());
+    const exists = (r) => sessions.some((x) => x.host === r.host && Number(x.port) === r.port && x.protocol === r.protocol);
+    let created = 0;
+    let skipped = 0;
+    const added = [];
+    for (const r of Array.isArray(rows) ? rows : []) {
+      if (!r || typeof r.host !== 'string' || !r.host) continue;
+      if (opts.skipExisting !== false && exists(r)) { skipped++; continue; }
+      let credentialId = opts.credentialId || '';
+      if (r.credential) {
+        const c = credByName(r.credential);
+        if (c) credentialId = c.id; else warnings.push(`${r.name}: no credential named "${r.credential}"`);
+      }
+      const session = {
+        id: newId('s_'), name: String(r.name || r.host), protocol: r.protocol || 'ssh2', host: r.host,
+        port: Number(r.port) || 22, username: r.username || '', parent: folderFor(r.folder),
+        auth: { credentialId, password: '', passphrase: '' }, notes: r.notes || '',
+      };
+      sessions.push(session);
+      added.push([session, r.jump]);
+      created++;
+    }
+    for (const [session, jump] of added) {
+      if (!jump) continue;
+      const j = sessions.find((x) => x.protocol === 'ssh2' && x !== session && (x.name === jump || x.host === jump));
+      if (j) session.ssh = { jumpSessionId: j.id }; else warnings.push(`${session.name}: no SSH session named "${jump}" for the jump host`);
+    }
+    this._write('sessions');
+    return { created, skipped, warnings };
   }
 
   /** Import Host entries from an OpenSSH client config file (~/.ssh/config). */

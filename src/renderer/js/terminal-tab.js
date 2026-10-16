@@ -5,8 +5,9 @@ import { FitAddon } from '../../../node_modules/@xterm/addon-fit/lib/addon-fit.m
 import { SearchAddon } from '../../../node_modules/@xterm/addon-search/lib/addon-search.mjs';
 import { WebLinksAddon } from '../../../node_modules/@xterm/addon-web-links/lib/addon-web-links.mjs';
 import { Unicode11Addon } from '../../../node_modules/@xterm/addon-unicode11/lib/addon-unicode11.mjs';
-import { h, contextMenu } from './dom.js';
-import { getScheme } from './schemes.js';
+import { ImageAddon } from '../../../node_modules/@xterm/addon-image/lib/addon-image.mjs';
+import { h, contextMenu, toast } from './dom.js';
+import { schemeFor } from './schemes.js';
 import { applyHighlights } from './highlight.js';
 
 let seq = 0;
@@ -50,7 +51,8 @@ export class TerminalTab {
     this.banner = h('div.pane-banner', { hidden: true });
     this.findBar = this._buildFindBar();
     this.titleEl = h('div.pane-title', {}, this.title);
-    this.el.append(this.titleEl, this.findBar, this.termEl, this.banner);
+    this.xferBar = h('div.xfer-bar', { hidden: true });
+    this.el.append(this.titleEl, this.findBar, this.xferBar, this.termEl, this.banner);
     this.el.addEventListener('mousedown', () => app.activate(this));
 
     this._createTerminal();
@@ -60,16 +62,20 @@ export class TerminalTab {
   get displayTitle() { return (this.cfg.terminal.useRemoteTitle && this.remoteTitle) || this.title; }
 
   _createTerminal() {
-    const settings = this.app.settings;
+    const settings = this.app.view || this.app.settings;
     const t = this.cfg.terminal;
     const term = new Terminal({
       allowProposedApi: true,
       fontFamily: t.fontFamily || settings.fontFamily,
       fontSize: t.fontSize || settings.fontSize,
+      lineHeight: Number(settings.lineHeight) || 1.15,
+      letterSpacing: 0,
+      fontWeightBold: 'bold',
+      minimumContrastRatio: 1,
       scrollback: Number(t.scrollback) || 10000,
       cursorStyle: t.cursorStyle || 'block',
       cursorBlink: t.cursorBlink !== false,
-      theme: getScheme(t.colorScheme, this.app.theme),
+      theme: schemeFor(this.session, settings, this.app.theme),
       macOptionIsMeta: true,
       rightClickSelectsWord: false,
       allowTransparency: false,
@@ -90,6 +96,12 @@ export class TerminalTab {
     const uni = new Unicode11Addon();
     term.loadAddon(uni);
     term.unicode.activeVersion = '11';
+    // Inline images: Kitty graphics protocol, Sixel and iTerm2 (OSC 1337). Only images sent inline
+    // are accepted: the remote side can never make TermCraft read local files.
+    if (settings.inlineImages !== false) {
+      this.images = new ImageAddon({ kittySupport: true, sixelSupport: true, iipSupport: true, storageLimit: 128, pixelLimit: 4096 * 4096 });
+      term.loadAddon(this.images);
+    }
     term.open(this.termEl);
     this.el.style.background = term.options.theme.background; // fill the padding around the terminal
 
@@ -160,7 +172,12 @@ export class TerminalTab {
       { label: 'Select All', action: () => this.term.selectAll() },
       '-',
       { label: 'Find…', action: () => this.showFind() },
+      { label: 'Save Output As…', action: () => this.saveOutput() },
       { label: 'Clear Scrollback', action: () => this.term.clear() },
+      '-',
+      { label: 'Send File (XMODEM-1K)…', action: () => this.app.dispatch('xmodemSend1k'), disabled: this.state !== 'connected' },
+      { label: 'Send File (YMODEM)…', action: () => this.app.dispatch('ymodemSend'), disabled: this.state !== 'connected' },
+      { label: 'Send File (ZMODEM)…', action: () => this.app.dispatch('zmodemSend'), disabled: this.state !== 'connected' },
       '-',
       { label: 'Reconnect', action: () => this.connect() },
       { label: 'Disconnect', action: () => this.disconnect(), disabled: this.state !== 'connected' },
@@ -203,6 +220,7 @@ export class TerminalTab {
   }
 
   write(data) {
+    this.lastOutputAt = Date.now();
     this.term.write(applyHighlights(data, this.app.highlights));
     if (this.app.active !== this && this.app.settings.tabActivityIndicator && !this.activity) {
       this.activity = true;
@@ -276,6 +294,48 @@ export class TerminalTab {
     this.focus();
   }
 
+  /** Whole scrollback + screen as plain text. */
+  outputText() {
+    const buf = this.term.buffer.active;
+    const lines = [];
+    for (let i = 0; i < buf.length; i++) lines.push(buf.getLine(i)?.translateToString(true) ?? '');
+    while (lines.length && !lines.at(-1)) lines.pop();
+    return lines.join('\n') + '\n';
+  }
+
+  async saveOutput() {
+    const f = await window.api.file.saveOutput(`${this.title}-${new Date().toISOString().slice(0, 10)}`, this.outputText());
+    if (f) toast(`Saved to ${f}`);
+  }
+
+  /** XMODEM/YMODEM progress from the main process. */
+  onXfer(p) {
+    const verb = p.direction === 'send' ? 'Sending' : 'Receiving';
+    const proto = p.protocol.toUpperCase();
+    if (p.state === 'cancelled') { this.xferBar.hidden = true; return; }
+    if (p.state === 'done' || p.state === 'failed') {
+      this.xferBar.hidden = true;
+      if (p.state === 'done') toast(`${proto}: ${p.direction === 'send' ? 'sent' : 'received'} ${(p.files || []).map((f) => f.split(/[\\/]/).pop()).join(', ')}`);
+      else toast(`${proto} transfer failed: ${p.error}`, 'error', 8000);
+      this.term.write(`\r\n\x1b[90m[TermCraft] ${proto} ${p.state === 'done' ? 'transfer complete' : `transfer failed: ${p.error}`}\x1b[0m\r\n`);
+      return;
+    }
+    const pct = p.size ? Math.floor((p.bytes / p.size) * 100) : null;
+    this.xferBar.replaceChildren(...[
+      h('span', {}, p.state === 'waiting'
+        ? `${proto}: waiting for the other side to start${p.direction === 'send' ? ' receiving (e.g. "rz", "loady"/"loadx" in U-Boot, or "xmodem -c flash:file" in ROMMON)' : ' sending (e.g. "sz file")'}…`
+        : `${verb} ${p.name || ''} — ${pct != null ? `${pct}%` : `${Math.round(p.bytes / 1024)} KB`}`),
+      pct != null ? h('progress', { max: 100, value: pct }) : null,
+      h('button.small', { onclick: () => window.api.xfer.cancel(this.id) }, 'Cancel')].filter(Boolean));
+    this.xferBar.hidden = false;
+  }
+
+  /** Text of the line the cursor is on (used to recognize a prompt). */
+  cursorLine() {
+    const b = this.term.buffer.active;
+    return b.getLine(b.baseY + b.cursorY)?.translateToString(true) ?? '';
+  }
+
   /** Visible screen text as an array of lines (for scripts). */
   screenLines() {
     const buf = this.term.buffer.active;
@@ -287,8 +347,9 @@ export class TerminalTab {
   applySettings() {
     this.cfg = this.app.effectiveSession(this.session);
     const t = this.cfg.terminal;
-    const s = this.app.settings;
-    this.term.options.theme = getScheme(t.colorScheme, this.app.theme);
+    const s = this.app.view || this.app.settings;
+    this.term.options.theme = schemeFor(this.session, s, this.app.theme);
+    this.term.options.lineHeight = Number(s.lineHeight) || 1.15;
     this.el.style.background = this.term.options.theme.background;
     this.term.options.fontFamily = t.fontFamily || s.fontFamily;
     this.term.options.fontSize = (t.fontSize || s.fontSize) + (this.app.fontDelta || 0);

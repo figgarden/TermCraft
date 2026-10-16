@@ -1,8 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 Gabriel Moreno and contributors
 import { h, showDialog, fillForm, collectForm, field, input, number, checkbox, select, listEditor, toast, confirmDialog } from './dom.js';
-import { schemeOptions } from './schemes.js';
-import { THEMES, THEME_NAMES, resolveTheme } from './themes.js';
+import { appearancePanel } from './appearance.js';
 import { comboOf } from './terminal-tab.js';
 import { FUNCTIONS, COLORS } from './button-bars.js';
 
@@ -77,26 +76,24 @@ export async function quickConnect(app) {
   else app.openSession(target);
 }
 
-// ---- Global Options ---------------------------------------------------------
+// ---- Settings ---------------------------------------------------------
 export async function globalOptions(app, startCat = 'General') {
   const s = JSON.parse(JSON.stringify(app.settings));
   const panels = {
     General: h('div.form', {},
-      field('Theme', themePicker(app, s), 'Click to preview. Terminals use the theme colors unless a session picks its own scheme.'),
       checkbox('copyOnSelect', 'Copy on select'),
       checkbox('rightClickPaste', 'Paste on right-click (Shift+right-click for menu)'),
       checkbox('confirmMultilinePaste', 'Confirm before pasting multiple lines'),
       field('Paste line delay (ms)', number('pasteLineDelay', { min: 0, max: 5000 }), 'Delay between lines when pasting; useful for slow devices'),
       checkbox('confirmCloseConnected', 'Confirm before closing connected tabs'),
       checkbox('tabActivityIndicator', 'Mark tabs with new output'),
+      checkbox('inlineImages', 'Show inline images in terminals: Kitty graphics, Sixel and iTerm2 (new tabs)'),
+      checkbox('zmodemAutoStart', 'Start ZMODEM automatically when a device runs rz or sz (downloads go to your Downloads folder)'),
       field('RDP client command', input('rdpClient', { placeholder: '(automatic: Windows App / mstsc / xfreerdp)' }),
         'Optional. Tokens: {file} (.rdp file), {host}, {port}, {user}. Example: remmina -c {file}')),
+    Appearance: appearancePanel(app, s),
     Terminal: h('div.form', {},
-      field('Default font family', input('fontFamily')),
-      field('Default font size', number('fontSize', { min: 6, max: 72 })),
-      h('h4', {}, 'Default session settings'),
-      h('p.hint', {}, 'Applied to new sessions and anything a session does not override.'),
-      field('Color scheme', select('defaultSession.terminal.colorScheme', schemeOptions())),
+      h('p.hint', {}, 'Defaults for every session; a session can override them in Session Options. Colors, font and cursor are in Appearance.'),
       field('Terminal type', select('defaultSession.terminal.termType', ['xterm-256color', 'xterm', 'vt100', 'vt220', 'ansi', 'linux'])),
       field('Scrollback lines', number('defaultSession.terminal.scrollback', { min: 0 })),
       field('SSH keep-alive (s)', number('defaultSession.ssh.keepAlive', { min: 0 })),
@@ -120,7 +117,7 @@ export async function globalOptions(app, startCat = 'General') {
   fillForm(body, s);
   show(startCat);
   const ok = await showDialog({
-    title: 'Global Options', body, width: 900, className: 'session-dialog',
+    title: 'Settings', body, width: 980, className: 'session-dialog settings-dialog',
     buttons: [{ label: 'Cancel', value: false }, { label: 'OK', value: true, primary: true }],
   });
   if (!ok) { app.applyTheme(); return; } // undo the live preview
@@ -130,45 +127,6 @@ export async function globalOptions(app, startCat = 'General') {
   s.highlights = s.highlights.filter((x) => x.pattern);
   s.keymap = s.keymap.filter((k) => k.key);
   await app.saveSettings(s);
-}
-
-/** Theme cards: each shows the theme's own panel, text, a prompt and its ANSI colors. */
-function themePicker(app, s) {
-  const prefersDark = () => matchMedia('(prefers-color-scheme: dark)').matches;
-  const normalize = (v) => (v === 'dark' ? 'TermCraft Dark' : v === 'light' ? 'TermCraft Light' : v || 'system');
-  const hidden = h('input', { type: 'hidden', dataset: { path: 'theme' } });
-  const grid = h('div.theme-grid', { role: 'radiogroup', 'aria-label': 'Theme' });
-  const cards = new Map();
-  const select = (value) => {
-    hidden.value = value;
-    for (const [v, el] of cards) el.setAttribute('aria-checked', String(v === value));
-    app.applyTheme(value); // live preview
-  };
-  const card = (value, label, sub, t) => {
-    const swatches = ['red', 'green', 'yellow', 'blue', 'magenta', 'cyan'].map((k) => h('i', { style: { background: t.term[k] } }));
-    const el = h('button.theme-card', {
-      type: 'button', role: 'radio', title: label,
-      style: { background: t.ui.panel, color: t.ui.fg, borderColor: t.ui.border },
-      onclick: () => select(value),
-    },
-    h('span.theme-name', {}, label),
-    h('span.theme-sub', { style: { color: t.ui.dim } }, sub),
-    h('span.theme-term', { style: { background: t.term.background, color: t.term.foreground } },
-      h('b', { style: { color: t.term.green } }, '❯ '), 'ssh ', h('span', { style: { color: t.term.blue } }, 'web-01'),
-      h('span.theme-cursor', { style: { background: t.term.cursor } })),
-    h('span.theme-swatches', {}, swatches));
-    cards.set(value, el);
-    grid.append(el);
-  };
-  card('system', 'System', 'Follows your OS light/dark', resolveTheme('system', prefersDark()));
-  for (const name of THEME_NAMES) {
-    const t = THEMES[name];
-    card(name, name, `${t.dark ? 'Dark' : 'Light'} · ${t.family}`, t);
-  }
-  const initial = normalize(s.theme);
-  hidden.value = initial;
-  for (const [v, el] of cards) el.setAttribute('aria-checked', String(v === initial));
-  return h('div', {}, hidden, grid);
 }
 
 function buttonEditor(s) {
@@ -212,21 +170,53 @@ function buttonEditor(s) {
     host);
 }
 
+// Ready-made rule sets for common device output.
+const HIGHLIGHT_PRESETS = {
+  'Network devices': [
+    { pattern: '\\b(down|administratively down|err-disabled|notconnect|notconnected|disabled|blocking|BLK|inactive)\\b', regex: true, caseSensitive: false, color: '#ff5555', bold: true },
+    { pattern: '%[A-Z0-9_]+-[0-3]-[A-Z0-9_]+', regex: true, caseSensitive: true, color: '#ff5555', bold: true },
+    { pattern: '%[A-Z0-9_]+-4-[A-Z0-9_]+', regex: true, caseSensitive: true, color: '#f1c40f', bold: true },
+    { pattern: '\\b(connected|established|full|forwarding|FWD|active|up/up)\\b', regex: true, caseSensitive: false, color: '#50fa7b', bold: false },
+    { pattern: '\\b(?:\\d{1,3}\\.){3}\\d{1,3}(?:/\\d{1,2})?\\b', regex: true, caseSensitive: false, color: '#8be9fd', bold: false },
+    { pattern: '\\b(?:[0-9a-f]{4}\\.){2}[0-9a-f]{4}\\b|\\b(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}\\b', regex: true, caseSensitive: false, color: '#bd93f9', bold: false },
+    { pattern: '\\b(?:Gi|Te|Fa|Eth|Et|Po|Vl|Tw|Fo|Hu|xe|ge|et|ae)-?\\d+(?:/\\d+)*(?:\\.\\d+)?\\b', regex: true, caseSensitive: false, color: '#ffb86c', bold: false },
+  ],
+  'Linux servers': [
+    { pattern: '\\b(denied|refused|segfault|panic|oom|killed|unreachable|timeout|timed out|critical|emerg|alert)\\b', regex: true, caseSensitive: false, color: '#ff5555', bold: true },
+    { pattern: 'active \\(running\\)|\\b(?:enabled|listening|LISTEN|ESTABLISHED)\\b', regex: true, caseSensitive: false, color: '#50fa7b', bold: false },
+    { pattern: 'inactive \\(dead\\)|failed \\(Result:[^)]*\\)|\\bdegraded\\b', regex: true, caseSensitive: false, color: '#ff5555', bold: true },
+    { pattern: '\\b(?:\\d{1,3}\\.){3}\\d{1,3}(?::\\d+)?\\b', regex: true, caseSensitive: false, color: '#8be9fd', bold: false },
+    { pattern: '\\b(?:100|9\\d)%', regex: true, caseSensitive: false, color: '#ff5555', bold: true },
+  ],
+};
+
 function highlightEditor(s) {
+  const holder = h('div');
+  const editor = () => listEditor({
+    items: s.highlights,
+    columns: [
+      { key: 'enabled', label: 'On', type: 'checkbox', width: '36px' },
+      { key: 'pattern', label: 'Pattern' },
+      { key: 'regex', label: 'Regex', type: 'checkbox', width: '52px' },
+      { key: 'caseSensitive', label: 'Case', type: 'checkbox', width: '48px' },
+      { key: 'color', label: 'Color', type: 'color', width: '60px' },
+      { key: 'bold', label: 'Bold', type: 'checkbox', width: '44px' },
+    ],
+    newItem: () => ({ enabled: true, pattern: '', regex: false, caseSensitive: false, color: '#ff79c6', bold: true }),
+  });
+  holder.append(editor());
+  const addPreset = (name) => {
+    const have = new Set(s.highlights.map((x) => x.pattern));
+    const add = HIGHLIGHT_PRESETS[name].filter((x) => !have.has(x.pattern));
+    s.highlights.push(...add.map((x) => ({ ...x, enabled: true })));
+    holder.replaceChildren(editor());
+    toast(add.length ? `Added ${add.length} ${name.toLowerCase()} rule${add.length === 1 ? '' : 's'}` : 'Those rules are already here');
+  };
   return h('div.form', {},
     h('p.hint', {}, 'Matching words in terminal output are colored. Regex rules use JavaScript syntax.'),
-    listEditor({
-      items: s.highlights,
-      columns: [
-        { key: 'enabled', label: 'On', type: 'checkbox', width: '36px' },
-        { key: 'pattern', label: 'Pattern' },
-        { key: 'regex', label: 'Regex', type: 'checkbox', width: '52px' },
-        { key: 'caseSensitive', label: 'Case', type: 'checkbox', width: '48px' },
-        { key: 'color', label: 'Color', type: 'color', width: '60px' },
-        { key: 'bold', label: 'Bold', type: 'checkbox', width: '44px' },
-      ],
-      newItem: () => ({ enabled: true, pattern: '', regex: false, caseSensitive: false, color: '#ff79c6', bold: true }),
-    }));
+    h('div.row', {}, h('span.hint', {}, 'Add ready-made rules:'),
+      Object.keys(HIGHLIGHT_PRESETS).map((n) => h('button.small', { type: 'button', onclick: () => addPreset(n) }, n))),
+    holder);
 }
 
 function keymapEditor(s) {

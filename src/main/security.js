@@ -68,10 +68,16 @@ class ApprovedPaths {
   constructor() {
     this.files = new Set();
     this.dirs = new Set();
+    this.chosen = new Set(); // folders picked in a native folder dialog
   }
 
   approveFile(p) { if (p) this.files.add(path.resolve(p)); }
   approveDir(p) { if (p) this.dirs.add(path.resolve(p)); }
+
+  /** A folder the user picked in a native dialog (not one the page merely browsed). */
+  chooseDir(p) { if (p) { this.approveDir(p); this.chosen.add(path.resolve(p)); } }
+
+  isChosenDir(p) { return typeof p === 'string' && !!p && this.chosen.has(path.resolve(p)); }
 
   isApprovedFile(p) { return typeof p === 'string' && this.files.has(path.resolve(p)); }
 

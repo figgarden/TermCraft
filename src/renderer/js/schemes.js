@@ -41,7 +41,26 @@ export const SCHEMES = {
 
 export const FOLLOW_THEME = '';
 export const schemeNames = () => Object.keys(SCHEMES);
+export const CLASSIC_SCHEMES = Object.keys(EXTRAS);
 /** Options for color-scheme pickers: "Follow app theme" first. */
-export const schemeOptions = () => [[FOLLOW_THEME, 'Follow app theme'], ...schemeNames().map((n) => [n, n])];
-/** A session's scheme; empty or unknown names follow the app theme. */
+export const schemeOptions = () => [[FOLLOW_THEME, 'Match theme'], ...schemeNames().map((n) => [n, n])];
+/** A scheme by name; empty or unknown names use the app theme's own terminal colors. */
 export const getScheme = (name, appTheme) => SCHEMES[name] || appTheme?.term || SCHEMES['TermCraft Dark'];
+
+/**
+ * Terminal colors for a session: its own choice, else the default from Settings → Appearance,
+ * else the current theme's terminal colors.
+ */
+export const schemeFor = (session, settings, appTheme) =>
+  getScheme(session?.terminal?.colorScheme || settings?.defaultSession?.terminal?.colorScheme || '', appTheme);
+
+/** A <select> of terminal color choices, grouped. `first` is the label of the '' option. */
+export function schemeSelect(h, value, first, attrs = {}) {
+  const themed = schemeNames().filter((n) => !CLASSIC_SCHEMES.includes(n));
+  const sel = h('select', attrs,
+    h('option', { value: '' }, first),
+    h('optgroup', { label: 'Theme palettes' }, themed.map((n) => h('option', { value: n }, n))),
+    h('optgroup', { label: 'Classic' }, CLASSIC_SCHEMES.map((n) => h('option', { value: n }, n))));
+  sel.value = value || '';
+  return sel;
+}

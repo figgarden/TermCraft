@@ -209,9 +209,9 @@ class RdpService {
     const client = custom ? { kind: 'custom', name: 'custom command' } : findRdpClient();
     if (!client) {
       throw new Error({
-        darwin: 'No RDP client found. Install "Windows App" from the Mac App Store (it replaces Microsoft Remote Desktop), or set a custom RDP client in Global Options.',
-        linux: 'No RDP client found. Install FreeRDP (e.g. "sudo apt install freerdp3-x11" or "freerdp2-x11") or Remmina, or set a custom RDP client in Global Options.',
-      }[process.platform] || 'No RDP client found. Set a custom RDP client in Global Options.');
+        darwin: 'No RDP client found. Install "Windows App" from the Mac App Store (it replaces Microsoft Remote Desktop), or set a custom RDP client in Settings.',
+        linux: 'No RDP client found. Install FreeRDP (e.g. "sudo apt install freerdp3-x11" or "freerdp2-x11") or Remmina, or set a custom RDP client in Settings.',
+      }[process.platform] || 'No RDP client found. Set a custom RDP client in Settings.');
     }
 
     const entry = { server: null, route: null, child: null, file: null };

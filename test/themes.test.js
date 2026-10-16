@@ -42,7 +42,7 @@ test('themes: complete, valid and readable', async () => {
 test('themes: terminal schemes follow the app theme unless a session picks one', async () => {
   const { getScheme, schemeOptions, SCHEMES } = await import('../src/renderer/js/schemes.js');
   const { THEMES } = await import('../src/renderer/js/themes.js');
-  assert.deepStrictEqual(schemeOptions()[0], ['', 'Follow app theme']);
+  assert.deepStrictEqual(schemeOptions()[0], ['', 'Match theme']);
   assert.strictEqual(getScheme('', THEMES.Nord), THEMES.Nord.term);
   assert.strictEqual(getScheme('Monokai', THEMES.Nord), SCHEMES.Monokai);
   assert.strictEqual(getScheme('No Such Scheme', THEMES.Dracula), THEMES.Dracula.term);
@@ -61,4 +61,32 @@ test('themes: old settings and sessions migrate to the new model', () => {
   assert.strictEqual(store.getSettings().defaultSession.terminal.colorScheme, '');
   assert.strictEqual(store.getSession('a').terminal.colorScheme, '', 'old default now follows the theme');
   assert.strictEqual(store.getSession('b').terminal.colorScheme, 'Monokai', 'explicit choices are kept');
+});
+
+test('appearance: Light / Dark / Auto with a light and a dark variant; old single themes migrate', async () => {
+  const { appearanceOf, currentTheme, FAMILIES, variantLabel } = await import('../src/renderer/js/themes.js');
+  assert.deepStrictEqual(appearanceOf({ theme: 'Catppuccin Mocha' }), { appearance: 'dark', lightTheme: 'Catppuccin Latte', darkTheme: 'Catppuccin Mocha' });
+  assert.deepStrictEqual(appearanceOf({ theme: 'Solarized Light' }), { appearance: 'light', lightTheme: 'Solarized Light', darkTheme: 'Solarized Dark' });
+  assert.deepStrictEqual(appearanceOf({ theme: 'system' }), { appearance: 'auto', lightTheme: 'TermCraft Light', darkTheme: 'TermCraft Dark' });
+  assert.deepStrictEqual(appearanceOf({ theme: 'dark' }).appearance, 'dark');
+  // A dark theme in the light slot (hand-edited settings) falls back safely.
+  assert.strictEqual(appearanceOf({ appearance: 'auto', lightTheme: 'Nord', darkTheme: 'Nord' }).lightTheme, 'TermCraft Light');
+  const s = { appearance: 'auto', lightTheme: 'Gruvbox Light', darkTheme: 'Gruvbox Dark' };
+  assert.strictEqual(currentTheme(s, true).name, 'Gruvbox Dark');
+  assert.strictEqual(currentTheme(s, false).name, 'Gruvbox Light');
+  assert.strictEqual(currentTheme({ ...s, appearance: 'light' }, true).name, 'Gruvbox Light');
+  assert.strictEqual(FAMILIES.length, 13);
+  assert.ok(FAMILIES.every((f) => f.light.length + f.dark.length > 0));
+  assert.strictEqual(variantLabel('Catppuccin Macchiato'), 'Macchiato');
+});
+
+test('terminal colors: session choice, then the Appearance default, then the theme', async () => {
+  const { schemeFor, SCHEMES } = await import('../src/renderer/js/schemes.js');
+  const { THEMES } = await import('../src/renderer/js/themes.js');
+  const nord = THEMES.Nord;
+  const settings = (scheme) => ({ defaultSession: { terminal: { colorScheme: scheme } } });
+  assert.strictEqual(schemeFor({ terminal: {} }, settings(''), nord), nord.term);
+  assert.strictEqual(schemeFor({ terminal: {} }, settings('Dracula'), nord), SCHEMES.Dracula);
+  assert.strictEqual(schemeFor({ terminal: { colorScheme: 'Monokai' } }, settings('Dracula'), nord), SCHEMES.Monokai);
+  assert.strictEqual(schemeFor(null, null, nord), nord.term);
 });

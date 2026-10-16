@@ -11,7 +11,7 @@ const { spawn } = require('child_process');
 const { Server, utils } = require('ssh2');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
-const OUT = path.join(__dirname, '..', 'docs', 'screenshots');
+const OUT = process.env.TERMCRAFT_SHOTS_OUT || path.join(__dirname, '..', 'docs', 'screenshots');
 
 // Fake terminal output for the demo sessions (plain printf, rendered by a neutral /bin/sh).
 const DEMOS = {
@@ -174,7 +174,7 @@ module.exports = async function screenshots(win, { store }) {
   await sleep(300);
   await shot('button-bars');
   await modalClose();
-  await js(`window.termcraft.saveSettings({ theme: 'light' })`);
+  await js(`window.termcraft.saveSettings({ appearance: 'light' })`);
   await js(`window.termcraft.activate(window.termcraft.tabs[0])`);
   await sleep(600);
   await shot('light-theme');

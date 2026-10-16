@@ -6,7 +6,7 @@
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { BrowserWindow, shell } = require('electron');
+const { BrowserWindow, shell, dialog } = require('electron');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -68,6 +68,32 @@ module.exports = async function smoke(win) {
   check('victim file untouched, nothing executed', fs.readFileSync(victim, 'utf8') === 'keep me' && !fs.existsSync(pwned));
   await js(`window.api.store.saveSettings(JSON.parse('{"__proto__": {"rdpClient": "calc"}}'))`);
   check('prototype pollution via settings blocked', {}.rdpClient === undefined);
+
+  // --- Launch Application buttons: no shell, native approval the page can't skip -------------------
+  if (process.platform !== 'win32') {
+    const asked = [];
+    let answer = 0; // 0 Cancel, 1 Run Once, 2 Always Allow
+    const realBox = dialog.showMessageBox;
+    dialog.showMessageBox = async (_w, opts) => { asked.push(opts.detail); return { response: answer }; };
+    const marks = ['A', 'B', 'C'].map((n) => path.join(scratch, `INJECTED_${n}`));
+    const cmd = `echo safe; touch ${marks[0]} && touch ${marks[1]} $(touch ${marks[2]}) \`touch ${marks[2]}\``;
+    // A compromised page plants a button, then tries to run it.
+    await js(`window.api.store.saveSettings({ buttonBars: [{ id: 'evil', name: 'Evil', buttons: [{ label: 'x', action: 'run', value: ${JSON.stringify(cmd)} }] }] })`);
+    check('planted command still needs native approval (Cancel = not run)', (await js(`window.api.app.run(${JSON.stringify(cmd)})`)) === false && asked.length === 1);
+    answer = 1;
+    check('approved command runs', (await js(`window.api.app.run(${JSON.stringify(cmd)})`)) === true);
+    await sleep(500);
+    check('shell operators ; && $( ) and backticks are not interpreted', marks.every((m) => !fs.existsSync(m)));
+    check('approval dialog shows the exact program and command', /Program: echo/.test(asked[1]) && asked[1].includes(cmd));
+    answer = 2;
+    await js(`window.api.app.run(${JSON.stringify(cmd)})`);
+    await js(`window.api.app.run(${JSON.stringify(cmd)})`);
+    check('"Always Allow" is remembered for that exact command', asked.length === 3);
+    const missing = 'no-such-program-termcraft';
+    await js(`window.api.store.saveSettings({ buttonBars: [{ id: 'evil', name: 'Evil', buttons: [{ label: 'x', action: 'run', value: '${missing}' }] }] })`);
+    check('missing program reports an error', (await js(`window.api.app.run('${missing}').then(() => '', (e) => e.message)`)).includes('Program not found'));
+    dialog.showMessageBox = realBox;
+  }
 
   // --- Terminal output cannot inject HTML ---------------------------------------------------------
   await js(`void window.termcraft.dispatch('localShell')`);
