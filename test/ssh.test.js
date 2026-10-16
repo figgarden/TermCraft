@@ -14,7 +14,7 @@ const { SftpService } = require('../src/main/sftp-service');
 const { ConnectionManager } = require('../src/main/connection-manager');
 const { Store } = require('../src/main/store');
 
-const hostKey = utils.generateKeyPairSync('ed25519').private;
+const hostKey = require('./keygen').testHostKey();
 
 function startServer() {
   const clients = new Set();

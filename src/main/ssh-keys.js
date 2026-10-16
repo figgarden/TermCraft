@@ -17,6 +17,23 @@ const PUBKEY_RE = /^((?:ssh|ecdsa|sk)-[A-Za-z0-9@.-]+) ([A-Za-z0-9+/]+={0,3})(?:
 
 const sshDir = (home = os.homedir()) => path.join(home, '.ssh');
 
+/**
+ * Generate a key pair and check it by reading it back. ssh2's generator occasionally (about 1 in 200
+ * Ed25519 keys) writes a private key file that cannot be parsed, so a pair is only returned once
+ * it has been parsed successfully with its passphrase and matches its public key.
+ */
+function generatePair(type, opts = {}) {
+  for (let attempt = 0; attempt < 20; attempt++) {
+    const pair = utils.generateKeyPairSync(type, opts);
+    const parsed = utils.parseKey(pair.private, opts.passphrase || undefined);
+    const key = Array.isArray(parsed) ? parsed[0] : parsed;
+    if (!key || key instanceof Error) continue;
+    const pub = String(key.getPublicSSH ? key.getPublicSSH().toString('base64') : '');
+    if (pub && pair.public.split(' ')[1] === pub) return pair;
+  }
+  throw new Error('Could not create a valid key. Please try again.');
+}
+
 /** SHA256 fingerprint, as shown by ssh-keygen -l. */
 function fingerprint(b64) {
   return 'SHA256:' + crypto.createHash('sha256').update(Buffer.from(b64, 'base64')).digest('base64').replace(/=+$/, '');
@@ -45,7 +62,7 @@ function generateKey({ name, kind = 'ed25519', passphrase = '', comment = '' }, 
   const opts = { comment: comment || `${os.userInfo().username}@${os.hostname()}` };
   if (spec.bits) opts.bits = spec.bits;
   if (passphrase) Object.assign(opts, { passphrase, cipher: 'aes256-ctr', rounds: 16 });
-  const pair = utils.generateKeyPairSync(spec.type, opts);
+  const pair = generatePair(spec.type, opts);
   fs.writeFileSync(privateKey, pair.private, { mode: 0o600, flag: 'wx' });
   fs.writeFileSync(publicKey, pair.public + '\n', { mode: 0o644, flag: 'wx' });
   const parsed = parsePublicKey(pair.public);
@@ -76,4 +93,4 @@ function installCommand(pubLine) {
     + `if grep -qF ${q} ~/.ssh/authorized_keys; then echo TERMCRAFT_KEY_PRESENT; else printf '%s\\n' ${q} >> ~/.ssh/authorized_keys && echo TERMCRAFT_KEY_ADDED; fi`;
 }
 
-module.exports = { generateKey, listPublicKeys, parsePublicKey, installCommand, KEY_TYPES };
+module.exports = { generatePair, generateKey, listPublicKeys, parsePublicKey, installCommand, KEY_TYPES };

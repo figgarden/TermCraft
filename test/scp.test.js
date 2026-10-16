@@ -15,7 +15,7 @@ const { SshConnection } = require('../src/main/protocols/ssh');
 const { Store } = require('../src/main/store');
 const scp = require('../src/main/scp');
 
-const hostKey = utils.generateKeyPairSync('ed25519').private;
+const hostKey = require('./keygen').testHostKey();
 
 // These tests run the real OpenSSH scp binary through /bin/sh, which Windows runners don't have.
 const posixOnly = process.platform === 'win32' ? { skip: 'needs /bin/sh and OpenSSH scp' } : {};

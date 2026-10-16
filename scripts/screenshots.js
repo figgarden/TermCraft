@@ -49,7 +49,7 @@ const DEMOS = {
 };
 
 function startSshServer(root) {
-  const server = new Server({ hostKeys: [utils.generateKeyPairSync('ed25519').private] }, (client) => {
+  const server = new Server({ hostKeys: [require('../test/keygen').testHostKey()] }, (client) => {
     client.on('authentication', (ctx) => (ctx.method === 'password' && ctx.password === 'demo' ? ctx.accept() : ctx.reject(['password'])));
     client.on('ready', () => client.on('session', (accept) => accept().on('exec', (acc, rej, info) => {
       const ch = acc();

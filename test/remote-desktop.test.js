@@ -24,7 +24,7 @@ function fakeVnc() {
 function sshTunnelServer() {
   const stats = { tunnels: 0 };
   const clients = new Set();
-  const server = new Server({ hostKeys: [utils.generateKeyPairSync('ed25519').private] }, (client) => {
+  const server = new Server({ hostKeys: [require('./keygen').testHostKey()] }, (client) => {
     clients.add(client);
     client.on('authentication', (ctx) => (ctx.method === 'password' && ctx.password === 'secret' ? ctx.accept() : ctx.reject(['password'])));
     client.on('ready', () => client.on('tcpip', (accept, reject, info) => {

@@ -116,3 +116,15 @@ test('telnet: an unreachable host fails within the connect timeout instead of ha
   assert.ok(Date.now() - t0 < 3000);
   c.close();
 });
+
+test('ssh keys: every generated key can be read back (ssh2 alone fails about 1 in 200)', () => {
+  const { utils } = require('ssh2');
+  for (let i = 0; i < 300; i++) {
+    const plain = keys.generatePair('ed25519', { comment: 't@x' });
+    assert.ok(!(utils.parseKey(plain.private) instanceof Error), `plain key ${i}`);
+  }
+  for (let i = 0; i < 20; i++) {
+    const locked = keys.generatePair('ed25519', { comment: 't@x', passphrase: 'pw', cipher: 'aes256-ctr', rounds: 16 });
+    assert.ok(!(utils.parseKey(locked.private, 'pw') instanceof Error), `locked key ${i}`);
+  }
+});
