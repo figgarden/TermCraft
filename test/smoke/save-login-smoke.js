@@ -61,7 +61,11 @@ module.exports = async function smoke(win, { store }) {
   check('session saved with username', saved?.username === 'tester');
   check('password saved', saved?.auth.hasPassword === true);
   const raw = fs.readFileSync(store.files.sessions, 'utf8');
-  check('password encrypted on disk (keychain)', raw.includes('"enc:') && !raw.includes('secret'));
+  // Linux without a keyring (e.g. CI) uses the documented fallback; everywhere else it must be the keychain.
+  const { safeStorage } = require('electron');
+  const keyring = process.platform !== 'linux' || safeStorage.isEncryptionAvailable();
+  check(`password ${keyring ? 'encrypted with the keychain' : 'stored with the no-keyring fallback'} and not in plain text`,
+    raw.includes(keyring ? '"enc:' : '"b64:') && !raw.includes('secret'));
   check('tab now uses saved session', (await js(`window.termcraft.active.session.id`)) === saved?.id);
   await shot('03-connected-saved');
 

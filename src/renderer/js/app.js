@@ -154,7 +154,7 @@ class App {
         e.target.value = '';
       },
     });
-    this.broadcastBtn = tb(icon('broadcast'), 'Send keystrokes to all tabs', 'toggleBroadcast');
+    this.broadcastBtn = tb(icon('broadcast'), 'Send keystrokes to all tabs', 'toggleBroadcast', { class: 'tb-broadcast' });
     this.logBtn = tb(icon('record'), 'Log session', 'toggleLog');
     // Session layout switch: tabs, or tile every session on screen at once.
     this.layoutSeg = h('div.segmented', { role: 'radiogroup', 'aria-label': 'Session layout' },

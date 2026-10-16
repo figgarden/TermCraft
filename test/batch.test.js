@@ -87,7 +87,7 @@ test('batch: runner saves one file per device and reports failures', { timeout: 
   const summary = await runner.start('r1', { sessionIds: ['a', 'b', 'c'], commands: ['show ver'], timeoutSec: 5, outputDir: dir });
   assert.strictEqual(summary.ok, 1);
   assert.strictEqual(summary.failed, 2);
-  const text = fs.readFileSync(path.join(dir, 'core-sw-01.txt'), 'utf8');
+  const text = fs.readFileSync(path.join(dir, 'core-sw-01.txt'), 'utf8').replace(/\r\n/g, '\n'); // CRLF on Windows
   assert.match(text, /# core-sw-01 \(10\.0\.0\.1:23\)/);
   assert.match(text, /coresw01# show ver\n% output of show ver/);
   assert.ok(!/secret/.test(text), 'password never appears in the transcript');

@@ -112,7 +112,16 @@ function createWindow() {
     win.webContents.once('did-finish-load', () => {
       require(path.resolve(process.env.TERMCRAFT_SMOKE))(win, { store, manager, app })
         .catch((e) => console.error('[smoke]', e))
-        .finally(() => { allowClose = true; app.quit(); });
+        .finally(() => {
+          allowClose = true;
+          app.quit();
+          // Test runs only: if something keeps the app alive, say what, then exit so CI doesn't hang.
+          setTimeout(() => {
+            const handles = (process._getActiveHandles?.() || []).map((h) => h?.constructor?.name || typeof h);
+            console.error(`[smoke] Error app did not quit within 5 s; open handles: ${handles.join(', ')}`);
+            app.exit(1);
+          }, 5000).unref();
+        });
     });
   }
 

@@ -32,7 +32,7 @@ export class CommandBuffer {
       options.map(([v, text, ic]) => h('button', { type: 'button', role: 'radio', dataset: { v }, title: text, onclick: () => onPick(v) }, ic ? icon(ic, 14) : null, h('span', {}, text))));
     this.modeSeg = seg([['command', 'Command'], ['script', 'Script']], this.mode, (v) => this.setMode(v), 'Buffer mode');
     this.posSeg = seg([['bottom', 'Below'], ['side', 'Beside']], this.position, (v) => this.setPosition(v), 'Buffer position');
-    this.target = h('select', { 'aria-label': 'Send to', title: 'Send to' },
+    this.target = h('select', { 'aria-label': 'Send to', title: 'Send to', onchange: () => this.target.classList.toggle('to-all', this.target.value === 'all') },
       h('option', { value: 'current' }, 'Current tab'), h('option', { value: 'visible' }, 'Visible tabs'), h('option', { value: 'all' }, 'All tabs'));
     this.pace = h('select', { 'aria-label': 'Between lines', title: 'Between lines', onchange: () => storageSet('termcraft.buffer.pace', this.pace.value) },
       PACES.map(([v, l]) => h('option', { value: v }, l)));

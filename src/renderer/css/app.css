@@ -119,7 +119,7 @@ html[data-platform="darwin"] .toolbar { padding-left: 8px; }
 .tb-flex { flex: 1; }
 .quick-host { width: min(300px, 40vw); }
 .layout-sel { height: 28px; margin-left: 4px; }
-body.broadcasting .toolbar { box-shadow: inset 0 -2px 0 var(--warn); }
+body.broadcasting .toolbar { box-shadow: inset 0 -2px 0 var(--err); }
 
 /* ---- main layout ---- */
 .body { flex: 1; display: flex; min-height: 0; }
@@ -666,7 +666,7 @@ html[data-platform="darwin"] .toolbar :is(button, input, select, .segmented) { -
 .segmented button { border: none; border-radius: 6px; padding: 0 11px; color: var(--fg-dim); display: inline-flex; align-items: center; gap: 6px; }
 .segmented button:hover { color: var(--fg); }
 .segmented button.on { background: var(--bg-3); color: var(--fg); box-shadow: 0 1px 2px rgba(0, 0, 0, .18); }
-body.broadcasting .toolbar { box-shadow: inset 0 -2px 0 var(--warn); }
+body.broadcasting .toolbar { box-shadow: inset 0 -2px 0 var(--err); }
 
 /* Tabs: the active tab shares the terminal's background, so the two read as one surface. */
 .tabbar { background: var(--bg-2); min-height: 38px; padding: 6px 8px 0; gap: 2px; border-bottom: none; }
@@ -809,3 +809,6 @@ body.resizing-v { cursor: row-resize; user-select: none; }
 .cb-actions { display: flex; align-items: center; gap: 8px; padding: 6px 10px; border-bottom: 1px solid var(--border); font-size: 12px; flex-wrap: wrap; }
 .cb-actions .small { height: 26px; }
 .cb-head { flex-wrap: nowrap; overflow: hidden; }
+/* Sending to every tab is risky: make it impossible to miss. */
+.tb.tb-broadcast.on { background: color-mix(in srgb, var(--err) 14%, transparent); color: var(--err); box-shadow: inset 0 0 0 2px var(--err); }
+.cb-field select.to-all { border-color: var(--err); box-shadow: 0 0 0 1px var(--err); color: var(--err); font-weight: 600; }
