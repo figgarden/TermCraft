@@ -2,7 +2,7 @@
 
 All notable changes to TermCraft are documented here. This project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.2.0] — 2026-10-16
 
 ### Added — for network engineers and Linux admins
 - **Shared credentials** (Tools → Credentials): one login used by many sessions; update the password once for every device. Saving a new password at the login prompt updates the credential.

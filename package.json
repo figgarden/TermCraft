@@ -1,7 +1,7 @@
 {
   "name": "termcraft",
   "productName": "TermCraft",
-  "version": "0.1.1",
+  "version": "0.2.0",
   "description": "Free and open-source terminal and session manager: SSH2, Telnet, Rlogin, Serial, Raw TCP, local shells, SFTP, SCP, VNC and RDP, with tabs, port forwarding, jump hosts, button bars and scripting.",
   "main": "src/main/main.js",
   "author": {
