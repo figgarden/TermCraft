@@ -41,6 +41,7 @@ module.exports = async function smoke(win) {
     ordered = (await js(`window.termcraft.active.screenLines().join('')`)).includes(`ORDER-${typed}`);
   }
   check('fast keystrokes reach the shell in order', ordered);
+  if (!ordered) console.log('[debug] screen:', JSON.stringify(await js(`window.termcraft.active.screenLines().join('\\n')`)));
   await shot('02-local-shell');
 
   // Second tab + tiling.
