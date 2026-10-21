@@ -2,7 +2,7 @@
 
 All notable changes to TermCraft are documented here. This project uses [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.3.0] — 2026-10-20
 
 ### Changed — rewritten in Rust
 - **TermCraft is now a Rust application built with Tauri** instead of Electron and Node.js. The interface is unchanged; everything behind it (SSH, SFTP, SCP, Telnet, Rlogin, raw TCP, serial, local shells, port forwarding and jump hosts, XMODEM/YMODEM/ZMODEM, the TFTP server, VNC bridge and RDP launcher, Run Commands, the store and scripting) was rewritten in Rust. The app no longer ships its own browser engine: it uses the system web view, so it is much smaller.

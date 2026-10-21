@@ -10,20 +10,23 @@ permissions:
 
 jobs:
   build:
-    name: Build (${{ matrix.os }})
+    name: Build (${{ matrix.name }})
     strategy:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest
-            args: --target universal-apple-darwin
-            targets: aarch64-apple-darwin,x86_64-apple-darwin
-          - os: windows-latest
-            args: ''
-            targets: ''
-          - os: ubuntu-latest
-            args: ''
-            targets: ''
+          - name: mac-arm64
+            os: macos-latest
+            target: aarch64-apple-darwin
+          - name: mac-x64
+            os: macos-latest
+            target: x86_64-apple-darwin
+          - name: win-x64
+            os: windows-latest
+            target: x86_64-pc-windows-msvc
+          - name: linux-x86_64
+            os: ubuntu-latest
+            target: x86_64-unknown-linux-gnu
     runs-on: ${{ matrix.os }}
     timeout-minutes: 90
     env:
@@ -36,40 +39,64 @@ jobs:
           cache: npm
       - uses: dtolnay/rust-toolchain@stable
         with:
-          targets: ${{ matrix.targets }}
+          targets: ${{ matrix.target }}
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: src-tauri
+          key: ${{ matrix.target }}
       - name: Linux build dependencies
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y build-essential libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libudev-dev rpm lrzsz
       - run: npm ci
+      # Tests run on the native build only (the Intel Mac build is cross-compiled).
       - run: npm test
+        if: matrix.name != 'mac-x64'
         timeout-minutes: 20
       - run: cargo install tauri-cli --version "^2" --locked
       - name: Build installers
-        run: cargo tauri build ${{ matrix.args }}
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "macOS" ]; then
+            # The .dmg step scripts Finder, which hosted runners allow.
+            cargo tauri build --target ${{ matrix.target }} --bundles app,dmg
+          else
+            cargo tauri build --target ${{ matrix.target }}
+          fi
+      # Same file names as earlier releases: TermCraft-<version>-<platform>.<ext>
+      - name: Collect installers
+        shell: bash
+        run: |
+          set -euo pipefail
+          V=$(node -p "require('./package.json').version")
+          B=src-tauri/target/${{ matrix.target }}/release
+          mkdir -p out
+          one() { local f; f=$(ls $1 2>/dev/null | head -1); [ -n "$f" ] || { echo "missing $1"; exit 1; }; cp "$f" "out/$2"; echo "$2 <- $f"; }
+          case "${{ matrix.name }}" in
+            mac-*)
+              one "$B/bundle/dmg/*.dmg" "TermCraft-$V-${{ matrix.name }}.dmg"
+              ditto -c -k --sequesterRsrc --keepParent "$B/bundle/macos/TermCraft.app" "out/TermCraft-$V-${{ matrix.name }}.zip" ;;
+            win-x64)
+              one "$B/bundle/nsis/*-setup.exe" "TermCraft-$V-win-x64-setup.exe"
+              one "$B/bundle/msi/*.msi" "TermCraft-$V-win-x64.msi"
+              one "$B/termcraft.exe" "TermCraft-$V-win-x64-portable.exe" ;;
+            linux-x86_64)
+              one "$B/bundle/appimage/*.AppImage" "TermCraft-$V-linux-x86_64.AppImage"
+              one "$B/bundle/deb/*.deb" "TermCraft-$V-linux-amd64.deb"
+              one "$B/bundle/rpm/*.rpm" "TermCraft-$V-linux-x86_64.rpm" ;;
+          esac
+          ls -la out
       - name: Check bundled license notices
         shell: bash
         run: |
-          missing=0
+          B=src-tauri/target/${{ matrix.target }}/release
           for f in LICENSE THIRD-PARTY-NOTICES.md; do
-            if ! find src-tauri/target -path "*bundle*" -name "$f" -print -quit | grep -q . \
-              && ! find src-tauri/target -path "*release*" -name "$f" -print -quit | grep -q .; then echo "missing $f"; missing=1; fi
+            find "$B" -name "$f" -print -quit | grep -q . || { echo "missing $f in the build"; exit 1; }
           done
-          exit $missing
       - uses: actions/upload-artifact@v4
         with:
-          name: installers-${{ runner.os }}
+          name: installers-${{ matrix.name }}
           if-no-files-found: error
-          path: |
-            src-tauri/target/**/bundle/dmg/*.dmg
-            src-tauri/target/**/bundle/macos/*.app.tar.gz
-            src-tauri/target/**/bundle/msi/*.msi
-            src-tauri/target/**/bundle/nsis/*.exe
-            src-tauri/target/**/bundle/appimage/*.AppImage
-            src-tauri/target/**/bundle/deb/*.deb
-            src-tauri/target/**/bundle/rpm/*.rpm
+          path: out/*
 
   release:
     name: Publish release

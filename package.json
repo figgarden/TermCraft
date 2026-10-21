@@ -1,7 +1,7 @@
 {
   "name": "termcraft",
   "productName": "TermCraft",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Free and open-source terminal and session manager: SSH2, Telnet, Rlogin, Serial, Raw TCP, local shells, SFTP, SCP, VNC and RDP, with tabs, port forwarding, jump hosts, button bars and scripting. Built with Rust and Tauri.",
   "author": {
     "name": "Gabriel Moreno",
