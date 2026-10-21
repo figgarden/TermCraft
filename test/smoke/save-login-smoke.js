@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 Gabriel Moreno and contributors
 // End-to-end: connect to a local SSH server, save the login at the prompts, reconnect with no prompts.
-// Run: TERMCRAFT_SMOKE=test/smoke/save-login-smoke.js TERMCRAFT_SHOTS=/tmp/shots npx electron . --user-data-dir=/tmp/termcraft-smoke
+// Run: npm run test:e2e -- save-login
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -23,7 +23,7 @@ function startServer() {
   return new Promise((r) => server.listen(0, '127.0.0.1', () => r(server)));
 }
 
-module.exports = async function smoke(win, { store }) {
+module.exports = async function smoke(win, { store, control }) {
   const out = process.env.TERMCRAFT_SHOTS || path.join(require('os').tmpdir(), 'termcraft-shots');
   fs.mkdirSync(out, { recursive: true });
   const js = (code) => win.webContents.executeJavaScript(`Promise.resolve(${code}).then((r) => (r && typeof r === 'object' ? null : r))`);
@@ -57,13 +57,12 @@ module.exports = async function smoke(win, { store }) {
   await sleep(1500);
 
   check('connected', (await js(`window.termcraft.active.state`)) === 'connected');
-  const saved = store.getTree().sessions.find((s) => s.host === '127.0.0.1' && s.port === port);
+  const saved = (await store.getTree()).sessions.find((s) => s.host === '127.0.0.1' && s.port === port);
   check('session saved with username', saved?.username === 'tester');
   check('password saved', saved?.auth.hasPassword === true);
   const raw = fs.readFileSync(store.files.sessions, 'utf8');
   // Linux without a keyring (e.g. CI) uses the documented fallback; everywhere else it must be the keychain.
-  const { safeStorage } = require('electron');
-  const keyring = process.platform !== 'linux' || safeStorage.isEncryptionAvailable();
+  const keyring = process.platform !== 'linux' || (await control.ipc('app:info')).encryption;
   check(`password ${keyring ? 'encrypted with the keychain' : 'stored with the no-keyring fallback'} and not in plain text`,
     raw.includes(keyring ? '"enc:' : '"b64:') && !raw.includes('secret'));
   check('tab now uses saved session', (await js(`window.termcraft.active.session.id`)) === saved?.id);

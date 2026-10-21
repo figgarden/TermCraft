@@ -3,8 +3,9 @@
 import { h, showDialog, fillForm, collectForm, field, input, number, checkbox, select, listEditor, toast } from './dom.js';
 import { schemeSelect } from './schemes.js';
 import { credentialOptions, credentialsDialog, colorPickerField } from './tools.js';
+import { normalizeHash } from './reticulum.js';
 
-const PROTOCOLS = [['ssh2', 'SSH2'], ['telnet', 'Telnet'], ['rlogin', 'Rlogin'], ['serial', 'Serial'], ['raw', 'Raw TCP'], ['local', 'Local Shell'], ['vnc', 'VNC'], ['rdp', 'RDP']];
+const PROTOCOLS = [['ssh2', 'SSH2'], ['telnet', 'Telnet'], ['rlogin', 'Rlogin'], ['serial', 'Serial'], ['raw', 'Raw TCP'], ['local', 'Local Shell'], ['vnc', 'VNC'], ['rdp', 'RDP'], ['rnsh', 'RNSH (Reticulum)']];
 const DEFAULT_PORTS = { ssh2: 22, telnet: 23, rlogin: 513, raw: 23, vnc: 5900, rdp: 3389 };
 const REMOTE_DESKTOP = new Set(['vnc', 'rdp']);
 const TERM_TYPES = ['xterm-256color', 'xterm', 'vt100', 'vt102', 'vt220', 'ansi', 'linux', 'screen-256color'];
@@ -12,7 +13,7 @@ const ENCODINGS = [['utf-8', 'UTF-8'], ['iso-8859-1', 'ISO-8859-1 (Latin-1)'], [
   ['shift_jis', 'Shift-JIS (receive)'], ['euc-jp', 'EUC-JP (receive)'], ['gbk', 'GBK (receive)'], ['big5', 'Big5 (receive)'], ['euc-kr', 'EUC-KR (receive)'], ['koi8-r', 'KOI8-R (receive)']];
 const BAUD = [300, 1200, 2400, 4800, 9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600];
 
-export const PROTOCOL_LABEL = Object.fromEntries(PROTOCOLS);
+export const PROTOCOL_LABEL = { ...Object.fromEntries(PROTOCOLS), rntool: 'Reticulum' };
 
 function folderOptions(tree) {
   const out = [['', '(root)']];
@@ -62,16 +63,19 @@ export async function editSession(app, original, { title = 'Session Options', pa
   }, 'Browse…');
 
   const sshSessions = tree.sessions.filter((x) => x.protocol === 'ssh2' && x.id !== s.id);
+  // RNSH shows up only when Reticulum is turned on (or the session already uses it).
+  const protocols = PROTOCOLS.filter(([p]) => p !== 'rnsh' || app.settings.reticulum?.enabled || s.protocol === 'rnsh');
+  const rnsIdentity = input('reticulum.identity', { placeholder: '(Settings → General → Reticulum, else rnsh’s own)' });
   const credSel = select('auth.credentialId', credentialOptions(app));
   const tabColor = colorPickerField(s.terminal?.tabColor);
   const panels = {
     Connection: h('div.form', {},
       field('Name', input('name', { placeholder: 'My server', autofocus: true })),
       field('Folder', select('parent', folderOptions(tree))),
-      field('Protocol', select('protocol', PROTOCOLS, { onchange: (e) => onProtocol(e.target.value) })),
+      field('Protocol', select('protocol', protocols, { onchange: (e) => onProtocol(e.target.value) })),
       h('div.net-only', {},
         field('Hostname', input('host', { placeholder: 'host.example.com or 10.0.0.1' })),
-        field('Port', number('port', { min: 1, max: 65535 })),
+        h('div.port-field', {}, field('Port', number('port', { min: 1, max: 65535 }))),
         h('div.remote-only', {}, field('Connect through SSH session', select('tunnel.sshSessionId', [['', '(none — connect directly)'], ...sshSessions.map((x) => [x.id, x.name || x.host])]),
           'Reach the remote desktop through an SSH tunnel to this saved session (recommended for VNC, which is often unencrypted)'))),
       h('div.serial-only', {},
@@ -83,6 +87,12 @@ export async function editSession(app, original, { title = 'Session Options', pa
           field('Stop bits', select('serial.stopBits', ['1', '1.5', '2']))),
         field('Flow control', select('serial.flowControl', [['none', 'None'], ['rtscts', 'RTS/CTS'], ['xonxoff', 'XON/XOFF']]))),
       h('div.user-field', {}, field('Username', input('username', { placeholder: '(prompt)' }))),
+      h('div.rnsh-only', {},
+        field('Identity file', h('div.row', {}, rnsIdentity, browse(rnsIdentity, { title: 'Reticulum identity file' })), 'The identity the listener must allow (rnsh -l -a <hash>).'),
+        field('Remote command', input('reticulum.command', { placeholder: '(the listener’s default shell)' }), 'Optional: run this instead of a shell, e.g. top'),
+        h('div.row', {},
+          field('Connect timeout (s)', number('reticulum.timeout', { min: 1, max: 3600 })),
+          h('div', {}, checkbox('reticulum.noId', 'Don’t identify (for listeners started with -n)')))),
       h('div.local-only', {},
         field('Shell', input('local.shell', { placeholder: app.info.defaultShell }), 'Leave blank for the system default shell'),
         field('Arguments', input('local.args', { placeholder: app.platform === 'win32' ? '' : '-l' })),
@@ -214,7 +224,13 @@ export async function editSession(app, original, { title = 'Session Options', pa
   const onProtocol = (p) => {
     const visible = (cat, on) => { const b = nav.querySelector(`[data-cat="${cat}"]`); if (b) b.hidden = !on; };
     for (const el of body.querySelectorAll('.net-only')) el.hidden = p === 'serial' || p === 'local';
-    for (const el of body.querySelectorAll('.user-field')) el.hidden = p === 'raw' || p === 'local';
+    for (const el of body.querySelectorAll('.user-field')) el.hidden = p === 'raw' || p === 'local' || p === 'rnsh';
+    for (const el of body.querySelectorAll('.port-field')) el.hidden = p === 'rnsh';
+    for (const el of body.querySelectorAll('.rnsh-only')) el.hidden = p !== 'rnsh';
+    // For rnsh the host field holds the destination hash.
+    const hostEl = body.querySelector('[data-path="host"]');
+    hostEl.placeholder = p === 'rnsh' ? '<a1b2c3…> destination hash (32 hex digits)' : 'host.example.com or 10.0.0.1';
+    hostEl.closest('.field').querySelector('.label').textContent = p === 'rnsh' ? 'Destination hash' : 'Hostname';
     for (const el of body.querySelectorAll('.serial-only')) el.hidden = p !== 'serial';
     for (const el of body.querySelectorAll('.local-only')) el.hidden = p !== 'local';
     const rd = REMOTE_DESKTOP.has(p);
@@ -254,6 +270,10 @@ export async function editSession(app, original, { title = 'Session Options', pa
           show('Connection');
           return 'Hostname is required';
         }
+        if (p === 'rnsh' && !normalizeHash(body.querySelector('[data-path="host"]').value)) {
+          show('Connection');
+          return 'Enter the destination hash: 32 hex digits';
+        }
         return null;
       },
     }],
@@ -271,6 +291,11 @@ export async function editSession(app, original, { title = 'Session Options', pa
   if (passphraseInput.value) out.auth.passphrase = passphraseInput.value;
   else delete out.auth.passphrase;
   out.port = Number(out.port) || DEFAULT_PORTS[out.protocol] || 0;
+  if (out.protocol === 'rnsh') {
+    out.host = normalizeHash(out.host);
+    out.port = 0;
+    out.reticulum = { ...(out.reticulum || {}), timeout: Number(out.reticulum?.timeout) || 30 };
+  }
   out.serial.baudRate = Number(out.serial.baudRate);
   out.serial.dataBits = Number(out.serial.dataBits);
   out.serial.stopBits = Number(out.serial.stopBits);

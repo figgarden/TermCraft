@@ -16,43 +16,46 @@ jobs:
       matrix:
         include:
           - os: macos-latest
-            args: --mac dmg zip --arm64 --x64
+            args: --target universal-apple-darwin
+            targets: aarch64-apple-darwin,x86_64-apple-darwin
           - os: windows-latest
-            args: --win nsis portable --x64
+            args: ''
+            targets: ''
           - os: ubuntu-latest
-            args: --linux AppImage deb rpm --x64
+            args: ''
+            targets: ''
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 60
+    timeout-minutes: 90
+    env:
+      CARGO_TERM_COLOR: always
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: ${{ matrix.targets }}
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
       - name: Linux build dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y build-essential python3 libudev-dev rpm
+        run: sudo apt-get update && sudo apt-get install -y build-essential libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libudev-dev rpm lrzsz
       - run: npm ci
       - run: npm test
-        timeout-minutes: 10
-      # Electron fetches its runtime lazily; the build bundles its LICENSE and Chromium notices
-      # from there, so make sure they exist (and fail rather than ship without them).
-      - name: Fetch Electron runtime and check license notices
-        shell: bash
-        run: |
-          node node_modules/electron/install.js
-          test -f node_modules/electron/dist/LICENSE
-          test -f node_modules/electron/dist/LICENSES.chromium.html
+        timeout-minutes: 20
+      - run: cargo install tauri-cli --version "^2" --locked
       - name: Build installers
-        run: npx electron-builder ${{ matrix.args }} --publish never
-        env:
-          CSC_IDENTITY_AUTO_DISCOVERY: false
+        run: cargo tauri build ${{ matrix.args }}
       - name: Check bundled license notices
         shell: bash
         run: |
           missing=0
-          for f in LICENSE.electron.txt LICENSES.chromium.html LICENSE.TermCraft.txt THIRD-PARTY-NOTICES.md; do
-            if ! find dist -path "*licenses/$f" -print -quit | grep -q .; then echo "missing $f"; missing=1; fi
+          for f in LICENSE THIRD-PARTY-NOTICES.md; do
+            if ! find src-tauri/target -path "*bundle*" -name "$f" -print -quit | grep -q . \
+              && ! find src-tauri/target -path "*release*" -name "$f" -print -quit | grep -q .; then echo "missing $f"; missing=1; fi
           done
           exit $missing
       - uses: actions/upload-artifact@v4
@@ -60,12 +63,13 @@ jobs:
           name: installers-${{ runner.os }}
           if-no-files-found: error
           path: |
-            dist/*.dmg
-            dist/*.zip
-            dist/*.exe
-            dist/*.AppImage
-            dist/*.deb
-            dist/*.rpm
+            src-tauri/target/**/bundle/dmg/*.dmg
+            src-tauri/target/**/bundle/macos/*.app.tar.gz
+            src-tauri/target/**/bundle/msi/*.msi
+            src-tauri/target/**/bundle/nsis/*.exe
+            src-tauri/target/**/bundle/appimage/*.AppImage
+            src-tauri/target/**/bundle/deb/*.deb
+            src-tauri/target/**/bundle/rpm/*.rpm
 
   release:
     name: Publish release

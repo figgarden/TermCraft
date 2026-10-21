@@ -1,6 +1,6 @@
 name: End-to-end
 
-# The whole app driven on macOS, Windows and Linux, with screenshots of the UI on each.
+# The whole app driven on macOS, Windows and Linux (screenshots on macOS).
 on:
   workflow_dispatch:
   push:
@@ -9,6 +9,10 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_COLOR: always
+  LINUX_DEPS: build-essential libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libudev-dev lrzsz xvfb
+
 jobs:
   e2e:
     strategy:
@@ -16,52 +20,47 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 45
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
       - name: Linux build and display dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y build-essential python3 libudev-dev xvfb lrzsz
+        run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
       - name: lrzsz (macOS)
         if: runner.os == 'macOS'
         run: brew install lrzsz
+      - name: Reticulum tools (for the Reticulum end-to-end suite)
+        if: runner.os != 'Windows'
+        run: pipx install rns && pipx install rnsh
       - run: npm ci
-      - run: node node_modules/electron/install.js
       - run: npm test
-        timeout-minutes: 10
+        timeout-minutes: 20
       - name: End-to-end suites
         shell: bash
+        env:
+          TERMCRAFT_SHOTS: ${{ runner.temp }}/shots
         run: |
           if [ "$RUNNER_OS" = "Linux" ]; then xvfb-run -a -s "-screen 0 1600x1000x24" npm run test:e2e; else npm run test:e2e; fi
-        timeout-minutes: 30
-      - name: Screenshots
-        if: always()
+        timeout-minutes: 40
+      - name: README screenshots
+        if: always() && runner.os == 'macOS'
         timeout-minutes: 8
-        shell: bash
         env:
           TERMCRAFT_SHOTS_OUT: ${{ runner.temp }}/shots
-          TERMCRAFT_SHOTS: ${{ runner.temp }}/shots
-          CI: 'true'
-        run: |
-          mkdir -p "$TERMCRAFT_SHOTS_OUT"
-          shoot() { # shoot <script> <profile>
-            if [ "$RUNNER_OS" = "Linux" ]; then
-              TERMCRAFT_SMOKE="$1" xvfb-run -a -s "-screen 0 1600x1000x24" npx electron . --user-data-dir="$2" --no-sandbox || true
-            else
-              TERMCRAFT_SMOKE="$1" npx electron . --user-data-dir="$2" || true
-            fi
-          }
-          # The README demo prints with a Unix shell; Windows gets the cross-platform Appearance shots.
-          [ "$RUNNER_OS" != "Windows" ] && shoot scripts/screenshots.js "$RUNNER_TEMP/ud1"
-          shoot test/smoke/themes-smoke.js "$RUNNER_TEMP/ud2"
-          ls -la "$TERMCRAFT_SHOTS_OUT"
+          E2E_BUILD: '0'
+        run: npm run screenshots || true
       - uses: actions/upload-artifact@v4
         if: always()
         with:
           name: screenshots-${{ matrix.os }}
           path: ${{ runner.temp }}/shots
+          if-no-files-found: ignore
           retention-days: 7

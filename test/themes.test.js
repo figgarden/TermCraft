@@ -6,7 +6,6 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { Store } = require('../src/main/store');
 
 const HEX = /^#[0-9a-f]{6}$/i;
 
@@ -48,20 +47,7 @@ test('themes: terminal schemes follow the app theme unless a session picks one',
   assert.strictEqual(getScheme('No Such Scheme', THEMES.Dracula), THEMES.Dracula.term);
 });
 
-test('themes: old settings and sessions migrate to the new model', () => {
-  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'termcraft-theme-'));
-  fs.writeFileSync(path.join(dir, 'settings.json'), JSON.stringify({ theme: 'light', defaultSession: { terminal: { colorScheme: 'TermCraft Dark' } } }));
-  fs.writeFileSync(path.join(dir, 'sessions.json'), JSON.stringify({ folders: [], sessions: [
-    { id: 'a', name: 'a', terminal: { colorScheme: 'TermCraft Dark' } },
-    { id: 'b', name: 'b', terminal: { colorScheme: 'Monokai' } },
-  ] }));
-  const store = new Store(dir, null);
-  fs.rmSync(dir, { recursive: true, force: true });
-  assert.strictEqual(store.getSettings().theme, 'TermCraft Light');
-  assert.strictEqual(store.getSettings().defaultSession.terminal.colorScheme, '');
-  assert.strictEqual(store.getSession('a').terminal.colorScheme, '', 'old default now follows the theme');
-  assert.strictEqual(store.getSession('b').terminal.colorScheme, 'Monokai', 'explicit choices are kept');
-});
+// Migration of old theme settings in the store is tested in src-tauri (store.rs).
 
 test('appearance: Light / Dark / Auto with a light and a dark variant; old single themes migrate', async () => {
   const { appearanceOf, currentTheme, FAMILIES, variantLabel } = await import('../src/renderer/js/themes.js');

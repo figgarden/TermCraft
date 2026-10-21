@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 Gabriel Moreno and contributors
 // Layout smoke test: sidebar collapse rail, stacked/side-by-side layouts, maximize terminal area.
-// Run: TERMCRAFT_SMOKE=test/smoke/layout-smoke.js TERMCRAFT_SHOTS=/tmp/shots npx electron . --user-data-dir=/tmp/termcraft-smoke
+// Run: npm run test:e2e -- layout
 'use strict';
 const fs = require('fs');
 const path = require('path');

@@ -8,11 +8,10 @@ const os = require('os');
 const path = require('path');
 const crypto = require('crypto');
 const { spawnSync } = require('child_process');
-const { dialog } = require('electron');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-module.exports = async function smoke(win) {
+module.exports = async function smoke(win, { control }) {
   const js = (code) => win.webContents.executeJavaScript(`Promise.resolve(${code}).then((r) => (r && typeof r === 'object' ? JSON.stringify(r) : r))`);
   let failed = false;
   const check = (label, ok) => { if (!ok) failed = true; console.log(`[smoke] ${ok ? 'PASS' : 'FAIL'} ${label}`); };
@@ -37,7 +36,7 @@ module.exports = async function smoke(win) {
   const files = { '1-loader.bin': crypto.randomBytes(40000), '2-kernel.img': crypto.randomBytes(150000), '3-config.txt': Buffer.from('hostname lab-5164\n') };
   for (const [n, d] of Object.entries(files)) fs.writeFileSync(path.join(src, n), d);
   // The "Send" file dialog picks the files in the wrong order on purpose.
-  dialog.showOpenDialog = async () => ({ canceled: false, filePaths: ['3-config.txt', '1-loader.bin', '2-kernel.img'].map((n) => path.join(src, n)) });
+  await control.mockDialogs([['3-config.txt', '1-loader.bin', '2-kernel.img'].map((n) => path.join(src, n))]);
   await sleep(1000);
 
   await js(`(() => { window.__xfer = []; window.api.xfer.onProgress((id, p) => window.__xfer.push(p)); })()`);
@@ -69,7 +68,7 @@ module.exports = async function smoke(win) {
   fs.rmSync(got, { force: true });
 
   // Cancelling the file picker cancels the device's rz cleanly.
-  dialog.showOpenDialog = async () => ({ canceled: true, filePaths: [] });
+  await control.mockDialogs([null]);
   await js(`window.termcraft.active.send(${JSON.stringify(`PATH='${binDir}':$PATH rz; echo RZ-DONE\r`)})`);
   let done = false;
   for (let i = 0; i < 300 && !done; i++) { await sleep(100); done = /RZ-DONE\s*$/m.test(await js(`window.termcraft.active.screenLines().join('\\n')`)); }

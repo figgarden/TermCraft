@@ -4,6 +4,7 @@ import { h, showDialog, fillForm, collectForm, field, input, number, checkbox, s
 import { appearancePanel } from './appearance.js';
 import { comboOf } from './terminal-tab.js';
 import { FUNCTIONS, COLORS } from './button-bars.js';
+import { settingsSection as reticulumSettings } from './reticulum.js';
 
 const DEFAULT_PORTS = { ssh2: 22, telnet: 23, rlogin: 513, raw: 23, vnc: 5900, rdp: 3389 };
 
@@ -79,6 +80,7 @@ export async function quickConnect(app) {
 // ---- Settings ---------------------------------------------------------
 export async function globalOptions(app, startCat = 'General') {
   const s = JSON.parse(JSON.stringify(app.settings));
+  const rns = reticulumSettings();
   const panels = {
     General: h('div.form', {},
       checkbox('copyOnSelect', 'Copy on select'),
@@ -90,7 +92,8 @@ export async function globalOptions(app, startCat = 'General') {
       checkbox('inlineImages', 'Show inline images in terminals: Kitty graphics, Sixel and iTerm2 (new tabs)'),
       checkbox('zmodemAutoStart', 'Start ZMODEM automatically when a device runs rz or sz (downloads go to your Downloads folder)'),
       field('RDP client command', input('rdpClient', { placeholder: '(automatic: Windows App / mstsc / xfreerdp)' }),
-        'Optional. Tokens: {file} (.rdp file), {host}, {port}, {user}. Example: remmina -c {file}')),
+        'Optional. Tokens: {file} (.rdp file), {host}, {port}, {user}. Example: remmina -c {file}'),
+      rns),
     Appearance: appearancePanel(app, s),
     Terminal: h('div.form', {},
       h('p.hint', {}, 'Defaults for every session; a session can override them in Session Options. Colors, font and cursor are in Appearance.'),
@@ -115,6 +118,7 @@ export async function globalOptions(app, startCat = 'General') {
   };
   const body = h('div.cat-dialog', {}, nav, content);
   fillForm(body, s);
+  rns.sync();
   show(startCat);
   const ok = await showDialog({
     title: 'Settings', body, width: 980, className: 'session-dialog settings-dialog',
@@ -412,7 +416,7 @@ export async function aboutDialog() {
       h('div', {},
         h('h2', {}, 'TermCraft'),
         h('p.about-tag', {}, '> a craft for the command line_'),
-        h('p.hint', {}, `Version ${a.version} · Electron ${a.electron} · Chromium ${a.chrome} · Node ${a.node}`),
+        h('p.hint', {}, `Version ${a.version} · Tauri ${a.tauri} · WebView ${a.webview} · Rust ${a.rust}`),
         h('p', {}, a.copyright),
         h('p.hint', {}, a.notice))),
     buttons: [{ label: 'View License', value: 'license' }, { label: 'OK', value: true, primary: true }],

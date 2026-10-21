@@ -65,7 +65,7 @@ module.exports = async function smoke(win, { store }) {
   check('line spacing previews live', (await js(`window.termcraft.tabs[0].term.options.lineHeight`)) === 1.3);
   await js(`document.querySelector('.modal-footer .primary').click()`);
   await sleep(300);
-  const s = store.getSettings();
+  const s = (await store.getSettings());
   check('OK saves mode, both variants, colors and spacing', s.appearance === 'auto' && s.lightTheme === 'Gruvbox Light' && s.darkTheme === 'Gruvbox Dark'
     && s.defaultSession.terminal.colorScheme === 'Dracula' && String(s.lineHeight) === '1.3');
   const prefersDark = await js(`matchMedia('(prefers-color-scheme: dark)').matches`);

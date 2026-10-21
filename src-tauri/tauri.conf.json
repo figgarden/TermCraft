@@ -1,0 +1,45 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "TermCraft",
+  "version": "0.2.0",
+  "identifier": "org.termcraft.app",
+  "build": {
+    "frontendDist": "web"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [],
+    "security": {
+      "csp": null,
+      "freezePrototype": false
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": "all",
+    "category": "DeveloperTool",
+    "shortDescription": "Free SSH, Telnet and serial terminal",
+    "longDescription": "Free and open-source terminal and session manager: SSH2, Telnet, Rlogin, Serial, Raw TCP, local shells, SFTP, SCP, VNC and RDP, with tabs, port forwarding, jump hosts, button bars and scripting.",
+    "copyright": "Copyright © 2026 Gabriel Moreno and contributors. Licensed under GPL-2.0-or-later.",
+    "license": "GPL-2.0-or-later",
+    "licenseFile": "../LICENSE",
+    "publisher": "Gabriel Moreno",
+    "homepage": "https://github.com/figgarden/TermCraft",
+    "icon": [
+      "../build/icons/32x32.png",
+      "../build/icons/128x128.png",
+      "../build/icons/256x256.png",
+      "../build/icon.icns",
+      "../build/icon.ico"
+    ],
+    "resources": {
+      "../LICENSE": "LICENSE",
+      "../README.md": "README.md",
+      "../THIRD-PARTY-NOTICES.md": "THIRD-PARTY-NOTICES.md",
+      "../examples/scripts/": "examples/scripts/"
+    },
+    "linux": {
+      "deb": { "depends": [] }
+    }
+  }
+}

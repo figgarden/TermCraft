@@ -1,14 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 Gabriel Moreno and contributors
 // End-to-end checks for the network/sysadmin tools against a fake Telnet switch on localhost.
-// Run: TERMCRAFT_SMOKE=test/smoke/netops-smoke.js npx electron . --user-data-dir=/tmp/termcraft-smoke
+// Run: npm run test:e2e -- netops
 'use strict';
 const fs = require('fs');
 const os = require('os');
 const net = require('net');
 const path = require('path');
 const dgram = require('dgram');
-const { dialog } = require('electron');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
@@ -55,15 +54,13 @@ function tftpGet(port, name) {
   });
 }
 
-module.exports = async function smoke(win) {
+module.exports = async function smoke(win, { control }) {
   const js = (code) => win.webContents.executeJavaScript(`Promise.resolve(${code}).then((r) => (r && typeof r === 'object' ? JSON.stringify(r) : r))`);
   const check = (label, ok) => console.log(`[smoke] ${ok ? 'PASS' : 'FAIL'} ${label}`);
   const rejected = (expr) => js(`(${expr}).then(() => '', (e) => e.message)`);
   const scratch = fs.mkdtempSync(path.join(os.tmpdir(), 'termcraft-netops-'));
   // Native dialogs answer with scratch paths.
-  const answers = [];
-  dialog.showOpenDialog = async () => ({ canceled: false, filePaths: [answers.shift()] });
-  dialog.showSaveDialog = async () => ({ canceled: false, filePath: answers.shift() });
+  const answer = (p) => control.mockDialogs([p]);
   await sleep(1000);
 
   // --- shared credential + bulk import ---------------------------------------------------
@@ -94,7 +91,7 @@ module.exports = async function smoke(win) {
 
   // --- save output ----------------------------------------------------------------------------
   const outFile = path.join(scratch, 'out.txt');
-  answers.push(outFile);
+  await answer(outFile);
   await js(`window.termcraft.dispatch('saveOutput')`);
   await sleep(300);
   check('Save Output writes the scrollback', fs.existsSync(outFile) && fs.readFileSync(outFile, 'utf8').includes('User Access Verification'));
@@ -102,7 +99,7 @@ module.exports = async function smoke(win) {
   // --- run commands on a folder ------------------------------------------------------------------
   const outRoot = path.join(scratch, 'runs');
   fs.mkdirSync(outRoot);
-  answers.push(outRoot);
+  await answer(outRoot);
   const chosen = await js(`window.api.dialog.openDir({ title: 'x' })`);
   await js(`void window.termcraft.openBatch({ sessionIds: window.termcraft.tree.sessions.filter((s) => s.parent && s.name.startsWith('lab-')).map((s) => s.id), commands: ['show version', 'show clock'], concurrency: 2, timeoutSec: 10, outputDir: ${JSON.stringify(chosen)} })`);
   for (let i = 0; i < 200 && (await js(`window.termcraft.active.state`)) === 'connecting'; i++) await sleep(100);
@@ -120,7 +117,7 @@ module.exports = async function smoke(win) {
   check('TFTP refuses a folder that was not picked in a dialog (e.g. ~/.ssh)', /Browse/.test(await rejected(`window.api.tftp.start({ root: ${JSON.stringify(path.join(os.homedir(), '.ssh'))}, port: 0 })`)));
   await js(`window.termcraft.openTftp()`);
   await sleep(300);
-  answers.push(tftpRoot);
+  await answer(tftpRoot);
   await js(`[...document.querySelectorAll('.pane.active button')].find((b) => b.textContent === 'Browse…').click()`);
   await sleep(200);
   const tport = 20000 + Math.floor(Math.random() * 20000);

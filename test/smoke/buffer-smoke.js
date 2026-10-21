@@ -69,6 +69,6 @@ module.exports = async function smoke(win, { store }) {
   b = await box();
   check('the script buffer can also sit below the terminal', b.y >= b.rowBottom - 2 && b.w >= b.rowW - 2);
   await sleep(1000);
-  check('the buffer text is saved', /sleep 1; echo s7/.test(store.getSettings().bufferText) && store.getSettings().bufferMode === 'script');
+  check('the buffer text is saved', /sleep 1; echo s7/.test((await store.getSettings()).bufferText) && (await store.getSettings()).bufferMode === 'script');
   fs.rmSync(dir, { recursive: true, force: true });
 };

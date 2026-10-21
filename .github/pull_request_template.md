@@ -1,7 +1,7 @@
 ## What does this change?
 
 ## How was it tested?
-- [ ] `npm test`
+- [ ] `npm run lint` and `npm test`
 - [ ] `npm run test:e2e` (UI changes)
 
 ## Checklist

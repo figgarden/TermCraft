@@ -17,6 +17,7 @@ import { ButtonBars } from './button-bars.js';
 import { currentTheme, appearanceOf, cssVars } from './themes.js';
 import { icon } from './icons.js';
 import { CommandBuffer } from './command-buffer.js';
+import * as rns from './reticulum.js';
 
 const api = window.api;
 
@@ -138,6 +139,7 @@ class App {
   }
 
   _compile() {
+    if (this.quickInput) this.quickInput.placeholder = rns.enabled(this) ? 'Enter host or destination hash — user@host[:port] or <hash>' : 'Enter host — user@host[:port]';
     this.highlights = compileHighlights(this.settings.highlights);
     this.keymap = new Map((this.settings.keymap || []).filter((k) => k.key).map((k) => [k.key, k]));
   }
@@ -153,9 +155,12 @@ class App {
     const tb = (label, title, action, extra = {}) =>
       h('button.tb', { title, 'aria-label': title, onclick: () => this.dispatch(action), ...extra }, label);
     this.quickInput = h('input.quick-host', {
-      placeholder: 'Enter host — user@host[:port]', 'aria-label': 'Quick connect host',
+      placeholder: rns.enabled(this) ? 'Enter host or destination hash — user@host[:port] or <hash>' : 'Enter host — user@host[:port]', 'aria-label': 'Quick connect host',
       onkeydown: (e) => {
         if (e.key !== 'Enter' || !e.target.value.trim()) return;
+        // A Reticulum destination hash connects with rnsh (when Reticulum is on).
+        const hash = rns.enabled(this) && rns.normalizeHash(e.target.value);
+        if (hash) { this.openSession({ name: `rnsh ${rns.shortHash(hash)}`, protocol: 'rnsh', host: hash, port: 0 }); e.target.value = ''; return; }
         const m = /^(?:(ssh2?|telnet|rlogin|raw|vnc|rdp):\/\/)?(?:([^@\s]+)@)?(\[[^\]]+\]|[^:\s]+)(?::(\d+))?$/i.exec(e.target.value.trim());
         if (!m) return toast('Use user@host[:port] or telnet://host', 'error');
         const protocol = (m[1] || 'ssh2').toLowerCase().replace(/^ssh$/, 'ssh2');
@@ -349,6 +354,8 @@ class App {
   async connectTarget(target) {
     const s = this.tree.sessions.find((x) => x.name === target || x.id === target);
     if (s) return this.openSession(s);
+    const hash = rns.enabled(this) && rns.normalizeHash(target);
+    if (hash) return this.openSession({ name: `rnsh ${rns.shortHash(hash)}`, protocol: 'rnsh', host: hash, port: 0 });
     const m = /^(?:(ssh2?|telnet|rlogin|raw|vnc|rdp):\/\/)?(?:([^@\s]+)@)?(\[[^\]]+\]|[^:\s]+)(?::(\d+))?$/i.exec(String(target).trim());
     if (!m) { toast(`No session named "${target}"`, 'error'); return null; }
     const protocol = (m[1] || 'ssh2').toLowerCase().replace(/^ssh$/, 'ssh2');
@@ -651,6 +658,8 @@ class App {
     const target = t.kind === 'scp' ? (t.info ? `${t.info.username}@${t.info.host}:${t.info.port}${t.info.via ? ` via ${t.info.via}` : ''}` : 'not connected')
       : cfg.protocol === 'serial' ? `${cfg.serial?.path} ${cfg.serial?.baudRate} ${cfg.serial?.dataBits}${(cfg.serial?.parity || 'n')[0].toUpperCase()}${cfg.serial?.stopBits}`
       : cfg.protocol === 'local' ? (t.status.shell || 'local shell')
+      : cfg.protocol === 'rnsh' ? `<${cfg.host}>`
+      : cfg.protocol === 'rntool' ? (t.status.shell || 'Reticulum')
         : `${t.username || cfg.username ? (t.username || cfg.username) + '@' : ''}${cfg.host}:${cfg.port}`;
     parts.push(h('span', {}, target));
     if (t.status.cipher) parts.push(h('span', { title: `KEX ${t.status.kex}\nHost key ${t.status.hostKey}\nMAC ${t.status.mac}\nCompression ${t.status.compress}` }, t.status.cipher));
@@ -778,6 +787,16 @@ class App {
         return;
       }
       case 'openLogFolder': return api.app.openPath('~/TermCraft Logs');
+      // Reticulum (Tools → Reticulum and the Transfer menu, when turned on in Settings).
+      case 'rnsConnect': return rns.rnshConnect(this);
+      case 'rnsExec': return rns.rnsExec(this);
+      case 'rnsProbe': return rns.rnsProbe(this);
+      case 'rnsPath': return rns.rnsPath(this);
+      case 'rnsPaths': return rns.rnsPaths(this);
+      case 'rnsStatus': return rns.rnsStatus(this);
+      case 'rnsIdentity': return rns.rnsIdentity(this);
+      case 'rnsSend': return rns.rnsSend(this);
+      case 'rnsFetch': return rns.rnsFetch(this);
       case 'nextTab': case 'prevTab': {
         if (!this.tabs.length) return;
         const i = this.tabs.indexOf(t);

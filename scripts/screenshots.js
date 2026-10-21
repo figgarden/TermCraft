@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 Gabriel Moreno and contributors
 // Capture README screenshots from a clean demo profile (made-up hosts, no personal data).
-// Run: TERMCRAFT_SMOKE=scripts/screenshots.js npx electron . --user-data-dir=$(mktemp -d)
+// Run: npm run screenshots
 'use strict';
 const fs = require('fs');
 const os = require('os');
@@ -77,19 +77,19 @@ module.exports = async function screenshots(win, { store }) {
 
   // Demo session tree: nothing here is real.
   const f = (name, parent = '') => store.saveFolder({ name, parent });
-  const prod = f('Production');
-  const stage = f('Staging');
-  const net = f('Network');
+  const prod = await f('Production');
+  const stage = await f('Staging');
+  const net = await f('Network');
   const ssh = (name, host, parent, extra = {}) => store.saveSession({ name, protocol: 'ssh2', host, port: 22, username: 'ops', parent: parent.id, ...extra });
-  const bastion = ssh('bastion', 'bastion.example.net', prod);
-  ssh('web-01', 'web-01.example.net', prod, { ssh: { jumpSessionId: bastion.id } });
-  ssh('web-02', 'web-02.example.net', prod, { ssh: { jumpSessionId: bastion.id } });
-  ssh('db-01', 'db-01.example.net', prod, { ssh: { jumpSessionId: bastion.id } });
-  ssh('web-stage', 'web.stage.example.net', stage);
-  store.saveSession({ name: 'core-sw-01', protocol: 'ssh2', host: '10.10.0.1', port: 22, username: 'admin', parent: net.id, terminal: { buttonBar: 'network' } });
-  store.saveSession({ name: 'console (USB)', protocol: 'serial', serial: { path: '/dev/tty.usbserial-0001', baudRate: 9600 }, parent: net.id });
-  store.saveSession({ name: 'build-win', protocol: 'rdp', host: 'build-win.example.net', port: 3389, username: 'ci', parent: stage.id });
-  store.saveSession({ name: 'design-mac', protocol: 'vnc', host: 'design-mac.example.net', port: 5900, parent: stage.id });
+  const bastion = await ssh('bastion', 'bastion.example.net', prod);
+  await ssh('web-01', 'web-01.example.net', prod, { ssh: { jumpSessionId: bastion.id } });
+  await ssh('web-02', 'web-02.example.net', prod, { ssh: { jumpSessionId: bastion.id } });
+  await ssh('db-01', 'db-01.example.net', prod, { ssh: { jumpSessionId: bastion.id } });
+  await ssh('web-stage', 'web.stage.example.net', stage);
+  await store.saveSession({ name: 'core-sw-01', protocol: 'ssh2', host: '10.10.0.1', port: 22, username: 'admin', parent: net.id, terminal: { buttonBar: 'network' } });
+  await store.saveSession({ name: 'console (USB)', protocol: 'serial', serial: { path: '/dev/tty.usbserial-0001', baudRate: 9600 }, parent: net.id });
+  await store.saveSession({ name: 'build-win', protocol: 'rdp', host: 'build-win.example.net', port: 3389, username: 'ci', parent: stage.id });
+  await store.saveSession({ name: 'design-mac', protocol: 'vnc', host: 'design-mac.example.net', port: 5900, parent: stage.id });
 
   win.setSize(1440, 900);
   await sleep(600);
@@ -122,7 +122,7 @@ module.exports = async function screenshots(win, { store }) {
   await shot('tabs');
 
   // Session editor on a jump-host session.
-  const web01 = store.getTree().sessions.find((s) => s.name === 'web-01');
+  const web01 = (await store.getTree()).sessions.find((s) => s.name === 'web-01');
   await js(`(() => { window.termcraft.sm.selected = { kind: 'session', id: '${web01.id}' }; window.termcraft.sm.render(); })()`);
   await js(`void window.termcraft.sm.editSelected()`);
   await sleep(500);

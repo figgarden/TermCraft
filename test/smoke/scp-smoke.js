@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 Gabriel Moreno and contributors
 // SCP Transfer Manager end-to-end (real scp server-side, through a jump host).
-// Run: TERMCRAFT_SMOKE=test/smoke/scp-smoke.js TERMCRAFT_SHOTS=/tmp/shots npx electron . --user-data-dir=/tmp/termcraft-smoke
+// Run: npm run test:e2e -- scp
 'use strict';
 const fs = require('fs');
 const os = require('os');
@@ -36,7 +36,7 @@ function startServer(root, stats) {
   return new Promise((r) => server.listen(0, '127.0.0.1', () => r(server)));
 }
 
-module.exports = async function smoke(win, { store }) {
+module.exports = async function smoke(win, { store, control }) {
   if (process.platform === 'win32') { console.log('[smoke] PASS skipped on Windows (the test server needs a Unix scp)'); return; }
   const out = process.env.TERMCRAFT_SHOTS || path.join(os.tmpdir(), 'termcraft-shots');
   fs.mkdirSync(out, { recursive: true });
@@ -71,7 +71,7 @@ module.exports = async function smoke(win, { store }) {
   const jumpStats = { tunnels: 0 };
   const target = await startServer(remoteRoot, targetStats);
   const jump = await startServer(fs.mkdtempSync(path.join(os.tmpdir(), 'tc-jump-')), jumpStats);
-  const bastion = store.saveSession({ name: 'Bastion', protocol: 'ssh2', host: '127.0.0.1', port: jump.address().port, username: 'ops', auth: { methods: ['password'], useAgent: false, password: 'secret' } });
+  const bastion = await store.saveSession({ name: 'Bastion', protocol: 'ssh2', host: '127.0.0.1', port: jump.address().port, username: 'ops', auth: { methods: ['password'], useAgent: false, password: 'secret' } });
 
   win.setSize(1280, 800);
   await sleep(800);
@@ -89,6 +89,9 @@ module.exports = async function smoke(win, { store }) {
   check(`prompts answered (${prompts.join(',')})`, prompts.includes('password'));
 
   await js(`${tab}.remoteInput.value = 'incoming'`);
+  // The files are picked in the (test-answered) file dialog, as a user would.
+  const choose = async (paths) => { await control.mockDialogs([paths]); await js(`window.api.dialog.openPaths({})`); };
+  await choose([path.join(localRoot, 'notes.txt'), path.join(localRoot, 'configs')]);
   await js(`${tab}.queueUploads(${JSON.stringify([path.join(localRoot, 'notes.txt'), path.join(localRoot, 'configs')])})`);
   for (let i = 0; i < 50 && (await js(`${tab}.jobs.filter((j) => j.state === 'done').length`)) < 2; i++) await sleep(100);
   check('uploaded file', fs.readFileSync(path.join(remoteRoot, 'incoming', 'notes.txt'), 'utf8') === 'notes over a jump host\n');
@@ -102,6 +105,7 @@ module.exports = async function smoke(win, { store }) {
   check('downloaded wildcard', fs.existsSync(path.join(downloads, 'notes.txt')));
 
   // A big upload: capture it mid-flight, then cancel it.
+  await choose([path.join(localRoot, 'big.iso')]);
   await js(`${tab}.queueUploads([${JSON.stringify(path.join(localRoot, 'big.iso'))}])`);
   for (let i = 0; i < 100 && !(await js(`(${tab}.jobs.at(-1).done || 0) > 5e6`)); i++) await sleep(50);
   await sleep(600);

@@ -75,26 +75,27 @@ Get the latest version from **[Releases](https://github.com/figgarden/TermCraft/
 | **SSH keys** | Create Ed25519, RSA or ECDSA keys in `~/.ssh` (with a passphrase), copy public keys, and **install a key on a server** like `ssh-copy-id` (right-click a session → Install SSH Key…). |
 | **VNC** | A built-in viewer (noVNC) in its own tab. It connects directly or **through an SSH tunnel** to a saved SSH session. It supports VNC password, Apple Remote Desktop (macOS Screen Sharing), VeNCrypt and RSA-AES authentication; fit-to-window, remote resize or actual size; view-only mode; clipboard sync; and Ctrl+Alt+Del. Logins can be saved like SSH logins. |
 | **RDP** | Saved RDP sessions (domain, size or full screen, multi-monitor, admin console) that TermCraft launches with the system's own client: Windows App on macOS, Remote Desktop Connection on Windows, FreeRDP or Remmina on Linux. You can also set a custom command. It can open an **SSH tunnel** first and point the client at it. On Linux, a saved password goes to FreeRDP on stdin, never on the command line. |
-| **Security** | Saved passwords and passphrases are encrypted through the OS keychain (Electron `safeStorage`: Keychain, DPAPI, libsecret). Secrets never reach the UI process. |
+| **Reticulum (optional)** | Off until you turn it on (Settings → General → Reticulum). Then devices on a [Reticulum](https://reticulum.network) network are reached by **destination hash** instead of IP, with the same tools as IP networks: **RNSH** sessions (`rnsh`, the SSH of Reticulum) saved in the Session Manager or opened by typing a hash in Quick Connect, with logging, logon actions and Run Commands on Sessions; **send and fetch files** with `rncp` (Transfer menu); and Tools → Reticulum for **remote commands** (`rnx`), **probes** (`rnprobe`, like ping), **path lookup and the path table** (`rnpath`, like traceroute and a routing table), **interface status** (`rnstatus`) and your rnsh **identity hash** for listeners' allow lists. TermCraft runs the official Reticulum programs (`pipx install rns` and `pipx install rnsh`), using your Reticulum config or one you choose. |
+| **Security** | Saved passwords and passphrases are encrypted with a key kept in the OS keychain (macOS Keychain, Windows Credential Manager, Linux Secret Service). Secrets never reach the UI. On macOS, logins saved by earlier (Electron) versions still decrypt. |
 
 ## Getting started
 
-```bash
-npm install          # also rebuilds node-pty / serialport for Electron
-npm start
-```
+TermCraft is written in Rust with [Tauri](https://tauri.app): the backend (connections, transfers, storage, scripting) is the Rust crate in `src-tauri/`, and the window shows the web UI in `src/renderer/` in the system's web view (WebKit on macOS and Linux, WebView2 on Windows).
 
-npm 11+ blocks dependency install scripts by default. The approvals are in `package.json` under `allowScripts`. If native modules fail to load, run `npm run rebuild`.
+You need [Rust](https://rustup.rs) (stable), Node.js (for the UI's browser libraries and the end-to-end tests), the Tauri CLI (`cargo install tauri-cli --version "^2"`), and on Linux the WebKitGTK and udev development packages (`sudo apt install libwebkit2gtk-4.1-dev libudev-dev libssl-dev build-essential`).
+
+```bash
+npm install          # the UI's browser libraries (xterm.js, noVNC, fonts)
+npm start            # build and run (cargo run)
+```
 
 ## Building installers
 
 ```bash
-npm run dist:mac     # .dmg + .zip
-npm run dist:win     # NSIS installer + portable .exe
-npm run dist:linux   # AppImage, .deb, .rpm
+npm run dist         # cargo tauri build: .app + .dmg on macOS, .msi/.exe on Windows, .deb/.rpm/AppImage on Linux
 ```
 
-Native modules (node-pty, serialport) have to be compiled on the target OS. Build each platform on that platform, or push a `v*` tag and let `.github/workflows/build.yml` build all three. Linux builds need `libudev-dev`. macOS distribution builds need a signing identity.
+Build each platform on that platform, or push a `v*` tag and let `.github/workflows/release.yml` build all three. macOS distribution builds need a signing identity.
 
 ## Scripting
 
@@ -112,23 +113,20 @@ tab.Session.Log(true);
 console.log("printed into the terminal");
 ```
 
-Scripts run with your own privileges and can use `fs`, `path`, `os`, `child_process`, `net` and `crypto`. Only run scripts you trust.
+Scripts run in an embedded JavaScript engine (QuickJS) on their own thread, with your own privileges. `require` gives a subset of Node's modules: `fs` (read, write, append, exists, mkdir, readdir, stat, rename, rm; the `Sync` forms, plus `fs.promises` and callbacks), `path`, `os`, `child_process` (`execSync`, `execFileSync`, `spawnSync`) and `crypto` (`createHash`, `randomBytes`, `randomUUID`). Files are read and written as text. `setTimeout`/`setInterval` work. `net` is not available. Only run scripts you trust.
 
 ## Tests
 
 ```bash
-npm test           # unit, integration and security tests
-npm run test:e2e   # end-to-end suites in the real app
-npm run test:all   # both, plus npm audit
+npm test           # Rust unit, integration and security tests (cargo test) + the UI's own tests
+npm run test:e2e   # end-to-end suites in the real app (a debug build)
+npm run lint       # cargo clippy, warnings as errors
+npm run test:all   # all of the above, plus npm audit and cargo audit
 ```
 
-The suite includes unit tests (Telnet parser, SOCKS parser, store, highlighting, escapes) and integration tests that run the SSH client against an in-process ssh2 server: authentication, host-key storage, shell I/O, local and SOCKS forwarding, SFTP, logon actions, `WaitFor` and timestamped logging.
+The Rust tests cover the Telnet and SOCKS parsers, the store and keychain encryption, XMODEM/YMODEM/ZMODEM (also against the real `lrzsz` tools when installed), TFTP, SCP (against the real `scp` binary), the scripting engine, and integration tests that run the SSH client against an in-process SSH server: password and keyboard-interactive logins, host keys, saving logins, shells, local and SOCKS forwarding, jump hosts, SFTP, SCP, VNC and RDP tunnels, logon actions, `WaitFor` and timestamped logging.
 
-For a UI smoke test with screenshots:
-
-```bash
-TERMCRAFT_SMOKE=test/smoke/ui-smoke.js TERMCRAFT_SHOTS=/tmp/shots npx electron . --user-data-dir=/tmp/termcraft-smoke
-```
+The end-to-end suites in `test/smoke/` drive the real window. Run one with `npm run test:e2e -- ui` (any suite name prefix). They use a test-control channel that exists only in debug builds and only when `TERMCRAFT_CONTROL=1` is set; on macOS they also save screenshots (`TERMCRAFT_SHOTS=/tmp/shots`).
 
 ## Roadmap (not yet implemented)
 
@@ -148,16 +146,18 @@ TERMCRAFT_SMOKE=test/smoke/ui-smoke.js TERMCRAFT_SHOTS=/tmp/shots npx electron .
 ## Layout
 
 ```
-src/main/            Electron main process
-  main.js            window, IPC wiring, main↔renderer requests
-  store.js           sessions, settings and known hosts (JSON in userData, secrets encrypted)
-  connection-manager.js  per-tab connections, decoding, logging, logon actions, waiters
-  scripting.js       tc.* scripting engine
-  sftp-service.js    SFTP and local filesystem operations
-  protocols/         ssh.js, simple.js (telnet/rlogin/raw/serial/local), telnet-parser.js, socks.js
-src/renderer/        UI (vanilla ES modules, xterm.js)
+src-tauri/           the app (Rust, Tauri)
+  src/app.rs         window, every call the UI makes, native dialogs
+  src/menu.rs        application menu
+  src/store.rs       sessions, settings and known hosts (JSON in the data folder, secrets encrypted)
+  src/safe_storage.rs  keychain-backed encryption of saved logins
+  src/conn_manager.rs  per-tab connections, decoding, logging, logon actions, waiters
+  src/proto/         ssh.rs, simple.rs (telnet/rlogin/raw), serial.rs, local.rs, telnet_parser.rs, socks.rs
+  src/scripting.rs   tc.* scripting engine (QuickJS; the API is in script_prelude.js)
+  src/sftp_service.rs, scp.rs, scp_service.rs, xmodem.rs, zmodem.rs, tftp.rs, batch.rs, remote_desktop.rs
+src/renderer/        UI (vanilla ES modules, xterm.js); js/tauri-api.js is its bridge to the backend
 examples/scripts/    sample scripts
-test/                node:test suites + UI smoke script
+test/                the UI's node:test suites and the end-to-end suites (test/smoke)
 ```
 
 ## License
@@ -166,7 +166,7 @@ TermCraft is free software: you can redistribute it and/or modify it under the t
 
 TermCraft is distributed in the hope that it will be useful, but **without any warranty**; without even the implied warranty of merchantability or fitness for a particular purpose.
 
-Every source file carries an SPDX tag: `SPDX-License-Identifier: GPL-2.0-or-later`. Bundled third-party packages are under GPL-compatible licenses (MIT, BSD, Unlicense, and MPL-2.0 for noVNC, whose secondary-license clause allows combination with the GPL), listed with their full texts in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Regenerate that file with `npm run notices` after changing dependencies.
+Every source file carries an SPDX tag: `SPDX-License-Identifier: GPL-2.0-or-later`. Bundled third-party packages are under GPL-compatible licenses (MIT, BSD, ISC, Unlicense, MPL-2.0 for noVNC, whose secondary-license clause allows combination with the GPL, and Apache-2.0 for some Rust crates, which is compatible with GPLv3), listed with their full texts in [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md). Regenerate that file with `npm run notices` after changing dependencies.
 
 The artwork in `build/`, `docs/` and `src/renderer/assets/` is generated by `scripts/icon-art.js` and is covered by the same license. Rebuild it with `npm run icons`.
 

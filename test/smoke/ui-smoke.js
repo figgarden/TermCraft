@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 Gabriel Moreno and contributors
-// UI smoke test. Run: TERMCRAFT_SMOKE=test/smoke/ui-smoke.js TERMCRAFT_SHOTS=/tmp/shots npx electron . --user-data-dir=/tmp/termcraft-smoke
+// UI smoke test. Run: npm run test:e2e -- ui
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -31,6 +31,11 @@ module.exports = async function smoke(win) {
   const screen = await js(`window.termcraft.active.screenLines().join('\\n')`);
   check('local shell echoes typed text', screen.includes('hello from TermCraft'));
   check('local shell tab is connected', (await js(`window.termcraft.active.state`)) === 'connected');
+  // Keystrokes sent one at a time, as fast as possible, arrive in order.
+  const typed = Array.from({ length: 60 }, (_, i) => String.fromCharCode(97 + (i % 26))).join('');
+  await js(`(() => { const id = window.termcraft.active.id; for (const ch of "echo ORDER-${typed}\\r") window.api.conn.write(id, ch); })()`);
+  await sleep(800);
+  check('fast keystrokes reach the shell in order', (await js(`window.termcraft.active.screenLines().join('\\n')`)).includes(`ORDER-${typed}`));
   await shot('02-local-shell');
 
   // Second tab + tiling.

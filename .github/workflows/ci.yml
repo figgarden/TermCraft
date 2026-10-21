@@ -8,6 +8,11 @@ on:
 permissions:
   contents: read
 
+env:
+  CARGO_TERM_COLOR: always
+  # Tauri's Linux build dependencies (WebKitGTK, menus, tray) plus udev for serial ports.
+  LINUX_DEPS: build-essential libwebkit2gtk-4.1-dev libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev libudev-dev lrzsz
+
 jobs:
   test:
     name: Test (${{ matrix.os }})
@@ -16,18 +21,32 @@ jobs:
       matrix:
         os: [ubuntu-latest, macos-latest, windows-latest]
     runs-on: ${{ matrix.os }}
-    timeout-minutes: 30
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-node@v4
         with:
           node-version: 22
           cache: npm
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
       - name: Linux build dependencies
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y build-essential python3 libudev-dev
+        run: sudo apt-get update && sudo apt-get install -y $LINUX_DEPS
+      - name: lrzsz (macOS)
+        if: runner.os == 'macOS'
+        run: brew install lrzsz
       - run: npm ci
+      - name: Clippy
+        run: npm run lint
       - run: npm test
-        timeout-minutes: 10
+        timeout-minutes: 20
       - name: Audit shipped dependencies
-        run: npm audit --omit=dev
+        shell: bash
+        run: |
+          cargo install cargo-audit --locked
+          npm run audit

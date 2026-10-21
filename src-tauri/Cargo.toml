@@ -1,0 +1,67 @@
+[package]
+name = "termcraft"
+version = "0.2.0"
+description = "Free and open-source terminal and session manager"
+authors = ["Gabriel Moreno and contributors"]
+license = "GPL-2.0-or-later"
+repository = "https://github.com/figgarden/TermCraft"
+edition = "2024"
+rust-version = "1.85"
+
+[lib]
+name = "termcraft"
+path = "src/lib.rs"
+
+[[bin]]
+name = "termcraft"
+path = "src/main.rs"
+
+[dependencies]
+tauri = { version = "2", features = [] }
+tokio = { version = "1", features = ["full"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+russh = { version = "0.64", default-features = false, features = ["flate2", "ring", "rsa"] }
+russh-sftp = "3"
+portable-pty = "0.9"
+serialport = "4"
+tokio-tungstenite = "0.30"
+rquickjs = { version = "0.14", features = ["classes", "properties"] }
+arboard = "3"
+rfd = "0.17"
+opener = { version = "0.9", features = ["reveal"] }
+keyring = "4"
+regex = "1"
+chrono = "0.4"
+dirs = "7"
+base64 = "0.23"
+rand = "0.10"
+sha2 = "0.11"
+sha1 = "0.11"
+md-5 = "0.11"
+hex = "0.4"
+aes = "0.9"
+cbc = { version = "0.2", features = ["alloc"] }
+pbkdf2 = "0.13"
+hmac = "0.13"
+encoding_rs = "0.8"
+futures = "0.3"
+anyhow = "1"
+parking_lot = "0.12"
+whoami = "1"
+socket2 = { version = "0.6", features = ["all"] }
+if-addrs = "0.15.0"
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[profile.release]
+codegen-units = 1
+lto = true
+strip = true
+
+[dev-dependencies]
+resvg = "0.48.1"
+
+[target.'cfg(target_os = "macos")'.dependencies]
+objc2 = "0.6"

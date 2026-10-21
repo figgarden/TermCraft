@@ -1,32 +1,30 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 Gabriel Moreno and contributors
 // In-app attack tests: each check tries something a malicious server or compromised page would do.
-// Run: TERMCRAFT_SMOKE=test/smoke/security-smoke.js npx electron . --user-data-dir=/tmp/termcraft-smoke
+// Run: npm run test:e2e -- security
 'use strict';
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { BrowserWindow, shell, dialog } = require('electron');
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-module.exports = async function smoke(win) {
+module.exports = async function smoke(win, { control }) {
   const js = (code) => win.webContents.executeJavaScript(`Promise.resolve(${code}).then((r) => (r && typeof r === 'object' ? JSON.stringify(r) : r))`);
   const check = (label, ok) => console.log(`[smoke] ${ok ? 'PASS' : 'FAIL'} ${label}`);
   // Fails (true) if the renderer-side call is rejected by the main process.
   const rejected = (expr) => js(`(${expr}).then(() => false, () => true)`);
-  // Never actually open anything during tests.
-  const externalOpened = [];
-  shell.openExternal = async (u) => { externalOpened.push(u); };
-  // Nor open a file manager (on a headless Linux machine that call can block the app).
-  shell.showItemInFolder = () => {};
-  shell.openPath = async () => '';
+  // Never actually open anything during tests (links, folders): the app records them instead.
+  await control.mockShell();
+  const externalOpened = () => control.externalOpened();
   await sleep(1000);
 
   // --- Process isolation ------------------------------------------------------------
-  check('renderer is sandboxed (webPreferences)', win.webContents.getLastWebPreferences().sandbox === true);
+  check('the page can only call TermCraft (no Tauri plugin commands)', await rejected(`window.__TAURI__.core.invoke('plugin:window|close', { label: 'main' })`)
+    && await rejected(`window.__TAURI__.core.invoke('plugin:event|emit', { event: 'x', payload: null })`)
+    && await js(`typeof window.__TAURI__.fs === 'undefined' && typeof window.__TAURI__.shell === 'undefined'`));
   check('no Node.js in the page', await js(`typeof require === 'undefined' && typeof process === 'undefined' && typeof module === 'undefined'`));
-  check('context isolation: preload internals unreachable', await js(`typeof window.ipcRenderer === 'undefined' && typeof window.api.onRequest === 'function'`));
+  check('the bridge cannot be replaced by page code', await js(`typeof window.ipcRenderer === 'undefined' && typeof window.api.onRequest === 'function' && Object.isFrozen(window.api)`));
 
   // --- Content Security Policy ---------------------------------------------------------
   await js(`(() => { const s = document.createElement('script'); s.textContent = 'window.__pwned = 1'; document.body.append(s); })()`);
@@ -39,18 +37,18 @@ module.exports = async function smoke(win) {
   check('CSP blocks plugins / objects', (await js(`(() => { const o = document.createElement('object'); o.data = 'file:///etc/hosts'; document.body.append(o); return o.contentDocument == null; })()`)));
 
   // --- Navigation and windows -----------------------------------------------------------
-  const before = win.webContents.getURL();
+  const before = await win.webContents.getURL();
   await js(`(() => { location.href = 'https://example.com/phish'; })()`);
   await sleep(400);
-  check('page cannot navigate away', win.webContents.getURL() === before);
+  check('page cannot navigate away', (await win.webContents.getURL()) === before);
   await js(`window.open('file:///etc/passwd')`);
   await js(`window.open('javascript:alert(1)')`);
   await sleep(300);
-  check('window.open creates no windows', BrowserWindow.getAllWindows().length === 1);
-  check('non-http links never reach the OS', externalOpened.length === 0);
+  check('window.open creates no windows', (await control.windowCount()) === 1);
+  check('non-http links never reach the OS', (await externalOpened()).length === 0);
   await js(`window.open('https://example.com/docs')`);
   await sleep(200);
-  check('http(s) links go to the system browser only', externalOpened.length === 1 && BrowserWindow.getAllWindows().length === 1);
+  check('http(s) links go to the system browser only', (await externalOpened()).length === 1 && (await control.windowCount()) === 1);
 
   // --- Permissions -------------------------------------------------------------------------
   check('camera/microphone denied', await js(`navigator.mediaDevices.getUserMedia({ video: true }).then(() => false, () => true)`));
@@ -65,6 +63,7 @@ module.exports = async function smoke(win) {
   check('cannot read arbitrary files', await rejected(`window.api.file.readText('/etc/passwd')`));
   check('cannot run arbitrary commands', await rejected(`window.api.app.run(${JSON.stringify('touch ' + pwned)})`));
   check('cannot run an unapproved script', await rejected(`window.api.script.run(${JSON.stringify(victim)}, null)`));
+  check('cannot upload files that were not chosen (SFTP and SCP)', await rejected(`window.api.sftp.upload('x', 1, '/etc/hosts', '/tmp')`) && await rejected(`window.api.scp.upload('x', 'j', [${JSON.stringify(victim)}], '.', {})`));
   check('cannot delete files outside browsed folders', await rejected(`window.api.sftp.localOp('delete', ${JSON.stringify(victim)})`));
   check('cannot open a file (could launch an executable)', (await js(`window.api.app.openPath(${JSON.stringify(victim)}).then((r) => r)`)) === '');
   await sleep(300);
@@ -74,28 +73,27 @@ module.exports = async function smoke(win) {
 
   // --- Launch Application buttons: no shell, native approval the page can't skip -------------------
   if (process.platform !== 'win32') {
-    const asked = [];
-    let answer = 0; // 0 Cancel, 1 Run Once, 2 Always Allow
-    const realBox = dialog.showMessageBox;
-    dialog.showMessageBox = async (_w, opts) => { asked.push(opts.detail); return { response: answer }; };
+    // The native approval box is answered by the test (cancel, once, always) and records what it showed.
+    const answer = (a) => control.mockBoxes([a]);
     const marks = ['A', 'B', 'C'].map((n) => path.join(scratch, `INJECTED_${n}`));
     const cmd = `echo safe; touch ${marks[0]} && touch ${marks[1]} $(touch ${marks[2]}) \`touch ${marks[2]}\``;
     // A compromised page plants a button, then tries to run it.
     await js(`window.api.store.saveSettings({ buttonBars: [{ id: 'evil', name: 'Evil', buttons: [{ label: 'x', action: 'run', value: ${JSON.stringify(cmd)} }] }] })`);
-    check('planted command still needs native approval (Cancel = not run)', (await js(`window.api.app.run(${JSON.stringify(cmd)})`)) === false && asked.length === 1);
-    answer = 1;
+    await answer('cancel');
+    check('planted command still needs native approval (Cancel = not run)', (await js(`window.api.app.run(${JSON.stringify(cmd)})`)) === false && (await control.boxCalls()).length === 1);
+    await answer('once');
     check('approved command runs', (await js(`window.api.app.run(${JSON.stringify(cmd)})`)) === true);
+    const asked = await control.boxCalls();
     await sleep(500);
     check('shell operators ; && $( ) and backticks are not interpreted', marks.every((m) => !fs.existsSync(m)));
     check('approval dialog shows the exact program and command', /Program: echo/.test(asked[1]) && asked[1].includes(cmd));
-    answer = 2;
+    await answer('always');
     await js(`window.api.app.run(${JSON.stringify(cmd)})`);
     await js(`window.api.app.run(${JSON.stringify(cmd)})`);
-    check('"Always Allow" is remembered for that exact command', asked.length === 3);
+    check('"Always Allow" is remembered for that exact command', (await control.boxCalls()).length === 3);
     const missing = 'no-such-program-termcraft';
     await js(`window.api.store.saveSettings({ buttonBars: [{ id: 'evil', name: 'Evil', buttons: [{ label: 'x', action: 'run', value: '${missing}' }] }] })`);
     check('missing program reports an error', (await js(`window.api.app.run('${missing}').then(() => '', (e) => e.message)`)).includes('Program not found'));
-    dialog.showMessageBox = realBox;
   }
 
   // --- Terminal output cannot inject HTML ---------------------------------------------------------
@@ -106,7 +104,7 @@ module.exports = async function smoke(win) {
   check('remote window title is shown as text, not HTML', (await js(`document.querySelectorAll('.tabbar img, .pane-title img').length`)) === 0 && (await js(`window.__pwned4`)) == null);
   await js(`window.termcraft.active.send("printf '\\\\033]8;;file:///etc/passwd\\\\033\\\\\\\\click\\\\033]8;;\\\\033\\\\\\\\\\\\n'\\r")`);
   await sleep(500);
-  check('OSC 8 links to non-http targets are not followed', externalOpened.length === 1);
+  check('OSC 8 links to non-http targets are not followed', (await externalOpened()).length === 1);
 
   fs.rmSync(scratch, { recursive: true, force: true });
 };

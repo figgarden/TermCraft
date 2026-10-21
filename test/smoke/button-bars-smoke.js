@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 Gabriel Moreno and contributors
-// Button bars end-to-end. Run: TERMCRAFT_SMOKE=test/smoke/button-bars-smoke.js TERMCRAFT_SHOTS=/tmp/shots npx electron . --user-data-dir=/tmp/termcraft-smoke
+// Button bars end-to-end. Run: npm run test:e2e -- button-bars
 'use strict';
 const fs = require('fs');
 const path = require('path');
@@ -89,7 +89,7 @@ module.exports = async function smoke(win, { store }) {
   await js(`document.dispatchEvent(new KeyboardEvent('keydown', { key: 'Escape' }))`);
 
   // Per-session bar: a saved session that always shows "Network Devices".
-  const saved = store.saveSession({ name: 'Core Switch (local)', protocol: 'local', terminal: { buttonBar: 'network' } });
+  const saved = await store.saveSession({ name: 'Core Switch (local)', protocol: 'local', terminal: { buttonBar: 'network' } });
   await js(`window.termcraft.reloadTree()`);
   await js(`void window.termcraft.openSession(window.termcraft.tree.sessions.find((s) => s.id === '${saved.id}'))`);
   await sleep(1200);
@@ -99,7 +99,7 @@ module.exports = async function smoke(win, { store }) {
   check(`other tab returns to selected bar (${await barName()})`, (await barName()) === 'Linux Admin');
 
   // Persistence.
-  const s = store.getSettings();
+  const s = (await store.getSettings());
   check('bars persisted', s.buttonBars.some((b) => b.name === 'Linux Admin' && b.buttons.length === 2) && s.activeButtonBar === s.buttonBars.find((b) => b.name === 'Linux Admin').id);
 
   // Global Options editor.

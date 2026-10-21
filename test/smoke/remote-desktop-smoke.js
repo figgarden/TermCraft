@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Copyright (C) 2026 Gabriel Moreno and contributors
 // End-to-end: embedded noVNC against a minimal RFB 3.8 server (with VNC auth), and the RDP tab.
-// Run: TERMCRAFT_SMOKE=test/smoke/remote-desktop-smoke.js TERMCRAFT_SHOTS=/tmp/shots npx electron . --user-data-dir=/tmp/termcraft-smoke
+// Run: npm run test:e2e -- remote-desktop
 'use strict';
 const fs = require('fs');
 const os = require('os');
@@ -97,7 +97,7 @@ module.exports = async function smoke(win, { store }) {
   await sleep(800);
   await js(`localStorage.removeItem('termcraft.saveLogin')`);
 
-  const sess = store.saveSession({ name: 'Studio Mac', protocol: 'vnc', host: '127.0.0.1', port: vnc.address().port });
+  const sess = await store.saveSession({ name: 'Studio Mac', protocol: 'vnc', host: '127.0.0.1', port: vnc.address().port });
   await js(`window.termcraft.reloadTree()`);
   await js(`void window.termcraft.openSession(window.termcraft.tree.sessions.find((s) => s.id === '${sess.id}'))`);
 
@@ -116,7 +116,7 @@ module.exports = async function smoke(win, { store }) {
   await sleep(200);
   check('keystrokes reach the server', stats.keys >= 2);
 
-  const saved = store.getTree().sessions.find((s) => s.id === sess.id);
+  const saved = (await store.getTree()).sessions.find((s) => s.id === sess.id);
   check('VNC login saved (encrypted)', saved?.auth.hasPassword === true && !fs.readFileSync(store.files.sessions, 'utf8').includes('hunter2'));
 
   // Reconnect: no prompt this time.
@@ -127,23 +127,20 @@ module.exports = async function smoke(win, { store }) {
 
   // RDP tab, using a harmless custom client command instead of launching a real client.
   const marker = path.join(os.tmpdir(), `termcraft-rdp-smoke-${process.pid}.txt`);
-  // Custom clients run without a shell; record the arguments with a tiny script (run by Electron as Node).
+  // Custom clients run without a shell; record the arguments with a tiny Node script.
   const recorder = path.join(os.tmpdir(), `termcraft-rdp-recorder-${process.pid}.js`);
   fs.writeFileSync(recorder, "require('fs').writeFileSync(process.argv[2], process.argv.slice(3).join(' '))");
-  // The custom client is Electron running the recorder as plain Node (set for the child only).
-  process.env.ELECTRON_RUN_AS_NODE = '1';
-  store.saveSettings({ rdpClient: `${JSON.stringify(process.execPath)} ${JSON.stringify(recorder)} ${JSON.stringify(marker)} {host} {port} {user}` });
-  const rdp = store.saveSession({ name: 'Build Server (Windows)', protocol: 'rdp', host: 'build-01.example', port: 3389, username: 'alice', rdp: { domain: 'CORP' } });
+  await store.saveSettings({ rdpClient: `${JSON.stringify(process.execPath)} ${JSON.stringify(recorder)} ${JSON.stringify(marker)} {host} {port} {user}` });
+  const rdp = await store.saveSession({ name: 'Build Server (Windows)', protocol: 'rdp', host: 'build-01.example', port: 3389, username: 'alice', rdp: { domain: 'CORP' } });
   await js(`window.termcraft.reloadTree()`);
   await js(`void window.termcraft.openSession(window.termcraft.tree.sessions.find((s) => s.id === '${rdp.id}'))`);
   check('RDP launched', await waitFor(`window.termcraft.active.state === 'connected'`));
   await sleep(300);
   for (let i = 0; i < 50 && !fs.existsSync(marker); i++) await sleep(100);
-  delete process.env.ELECTRON_RUN_AS_NODE;
   check('RDP client got the target', fs.existsSync(marker) && fs.readFileSync(marker, 'utf8').trim() === 'build-01.example 3389 alice');
   check('RDP card has no stray "null" text', !(await js(`document.querySelector('.rdp-card').textContent.includes('null')`)));
   await shot('02-rdp');
-  store.saveSettings({ rdpClient: '' });
+  await store.saveSettings({ rdpClient: '' });
   fs.rmSync(marker, { force: true });
   fs.rmSync(recorder, { force: true });
 

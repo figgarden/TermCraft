@@ -13,7 +13,7 @@ export const TAB_COLORS = [
 ];
 
 /** Protocols that can run commands without a tab. */
-export const COMMAND_PROTOCOLS = new Set(['ssh2', 'telnet', 'rlogin', 'serial']);
+export const COMMAND_PROTOCOLS = new Set(['ssh2', 'telnet', 'rlogin', 'serial', 'rnsh']);
 
 function folderOptions(tree, rootLabel = '(top level)') {
   const out = [['', rootLabel]];
@@ -137,7 +137,7 @@ export async function importHostsDialog(app, parentFolder = '') {
     rows: 10, spellcheck: false,
     placeholder: 'Paste a CSV with a header row, or one host per line:\n\nname,host,folder,protocol,credential\ncore-sw-01,10.10.0.1,HQ/Core,ssh,TACACS\nedge-rtr-01,10.10.0.254,HQ/Edge,telnet,\n\n— or —\n\n10.20.0.1\nbranch-sw-02 10.20.0.2',
   });
-  const proto = options([['ssh2', 'SSH2'], ['telnet', 'Telnet'], ['rlogin', 'Rlogin'], ['raw', 'Raw TCP'], ['vnc', 'VNC'], ['rdp', 'RDP']], 'ssh2');
+  const proto = options([['ssh2', 'SSH2'], ['telnet', 'Telnet'], ['rlogin', 'Rlogin'], ['raw', 'Raw TCP'], ['vnc', 'VNC'], ['rdp', 'RDP'], ...(app.settings.reticulum?.enabled ? [['rnsh', 'RNSH (Reticulum)']] : [])], 'ssh2');
   const port = h('input', { type: 'number', min: 0, max: 65535, placeholder: 'default' });
   const user = h('input', { type: 'text', placeholder: '(none)' });
   const cred = options(credentialOptions(app), '');

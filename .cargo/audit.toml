@@ -1,0 +1,6 @@
+# cargo audit configuration (npm run audit).
+[advisories]
+# RSA timing side channel ("Marvin"), no fixed version exists. It affects RSA private-key
+# operations; TermCraft signs once per login with an RSA key file, which doesn't give an
+# attacker the many precise timings the attack needs. See SECURITY.md.
+ignore = ["RUSTSEC-2023-0071"]

@@ -2,6 +2,26 @@
 
 All notable changes to TermCraft are documented here. This project uses [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed — rewritten in Rust
+- **TermCraft is now a Rust application built with Tauri** instead of Electron and Node.js. The interface is unchanged; everything behind it (SSH, SFTP, SCP, Telnet, Rlogin, raw TCP, serial, local shells, port forwarding and jump hosts, XMODEM/YMODEM/ZMODEM, the TFTP server, VNC bridge and RDP launcher, Run Commands, the store and scripting) was rewritten in Rust. The app no longer ships its own browser engine: it uses the system web view, so it is much smaller.
+- Your sessions, settings, known hosts and approved commands are read from the same folder as before. On macOS, saved passwords keep working (the same keychain entry and encryption format).
+- **Scripts** run in an embedded JavaScript engine (QuickJS) with the same `tc`/`crt` API. `require` offers `fs`, `path`, `os`, `child_process` and `crypto` (text files; synchronous, promise and callback forms); `net` is no longer available.
+- The About box shows the Tauri, web view and Rust versions.
+
+### Added — Reticulum (optional)
+- A **Reticulum** toggle in Settings → General (off by default). When on: **RNSH** sessions by destination hash (saved or typed in Quick Connect), **rncp** send and fetch (Transfer menu), and Tools → Reticulum for **rnx** remote commands, **rnprobe**, **rnpath** (lookup and path table), **rnstatus** and your rnsh identity hash. Run Commands on Sessions and Import Hosts (protocol `rnsh`) work with RNSH sessions. Uses the official Reticulum programs.
+
+### Security
+- Every web permission (camera, microphone, location, notifications) is denied explicitly; the macOS web view would otherwise grant camera and microphone requests.
+- Files uploaded over SFTP or SCP must have been chosen in a dialog, dropped on the window or browsed in the SFTP local pane, so a compromised page can't send other local files to a server.
+- The page can call only TermCraft's own backend; no Tauri plugins are enabled.
+
+### Fixed
+- Keystrokes typed very quickly always reach the connection in order.
+- Closing a tab while output was still arriving could stop the app.
+
 ## [0.2.0] — 2026-10-16
 
 ### Added — for network engineers and Linux admins

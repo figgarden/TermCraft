@@ -20,14 +20,14 @@ Signed-off-by: Your Name <you@example.com>
   // Copyright (C) <year> Gabriel Moreno and contributors
   ```
 - New dependencies must be compatible with **GPLv2**: MIT, BSD, ISC, zlib, Unlicense, LGPL, or GPL-2.0-or-later. Avoid Apache-2.0: it is compatible with GPLv3 only, so it would quietly remove the "version 2" option. Never add proprietary or "non-commercial" code. Run `npm run notices` afterwards.
-- Run `npm run test:all` before sending a change (unit, security and end-to-end tests plus a dependency audit).
+- Run `npm run test:all` before sending a change (clippy, unit, security and end-to-end tests plus dependency audits).
 - Keep security-sensitive code (authentication, host keys, credential storage, SCP/SFTP path handling) covered by tests.
 
 ## Building
 
 ```bash
-npm install
-npm start          # run from source
-npm run dist:mac   # or dist:win / dist:linux on that platform
+npm install        # the UI's browser libraries
+npm start          # build and run from source (needs Rust: https://rustup.rs)
+npm run dist       # installers for this platform (cargo tauri build)
 npm run icons      # re-render the artwork
 ```

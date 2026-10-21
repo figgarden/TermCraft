@@ -6,7 +6,7 @@ import { icon } from './icons.js';
 import { folderColorDialog, importHostsDialog, installKeyDialog, COMMAND_PROTOCOLS } from './tools.js';
 
 // Short text labels (not symbols): they look the same on every system and font.
-const ICON = { ssh2: 'SSH', telnet: 'TEL', rlogin: 'RLG', serial: 'COM', raw: 'TCP', local: 'SH', vnc: 'VNC', rdp: 'RDP' };
+const ICON = { ssh2: 'SSH', telnet: 'TEL', rlogin: 'RLG', serial: 'COM', raw: 'TCP', local: 'SH', vnc: 'VNC', rdp: 'RDP', rnsh: 'RNS' };
 
 function loadExpanded() {
   try { return new Set(JSON.parse(localStorage.getItem('termcraft.expanded') || '[]')); } catch { return new Set(); }
