@@ -55,6 +55,8 @@ function launch(profile, env) {
           if (w) (msg.error ? w.reject(new Error(msg.error)) : w.resolve(msg.result));
         }
       });
+      // A reset or broken pipe (the app quit or crashed mid-request) is reported as 'close' below.
+      sock.on('error', () => {});
       sock.on('close', () => { for (const w of waits.values()) w.reject(new Error('app closed')); waits.clear(); });
       const rq = (o) => new Promise((res, rej) => {
         if (sock.destroyed || sock.readyState !== 'open') { rej(new Error('app closed')); return; }
