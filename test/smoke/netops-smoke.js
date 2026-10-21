@@ -14,6 +14,7 @@ const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 /** A Cisco-like switch over Telnet: login, "terminal"-free paging with --More--. */
 function fakeSwitch() {
   const server = net.createServer((sock) => {
+    sock.on('error', () => {}); // Windows reports the app closing the connection as a reset
     let stage = 'user';
     let line = '';
     let user = '';

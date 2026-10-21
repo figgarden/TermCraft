@@ -16,6 +16,7 @@ const BANDS = [[226, 169, 59], [224, 83, 44], [46, 139, 133], [239, 229, 207]]; 
 /** Minimal RFB 3.8 server: VNC auth (accepts any response), Raw encoding, a striped desktop. */
 function startFakeVnc(stats) {
   const server = net.createServer((sock) => {
+    sock.on('error', () => {}); // Windows reports the app closing the connection as a reset
     let buf = Buffer.alloc(0);
     let stage = 'version';
     let pf = { bpp: 32, rShift: 16, gShift: 8, bShift: 0, big: false };
