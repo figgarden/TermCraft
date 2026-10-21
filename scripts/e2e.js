@@ -149,7 +149,8 @@ async function runSuite(suite) {
   const pass = log.filter((l) => /\[smoke\] PASS/.test(l)).length;
   const fails = log.filter((l) => /\[smoke\] (FAIL|Error)/.test(l));
   if (!pass && !fails.length) fails.push('suite produced no results');
-  const tail = fails.length && process.env.CI ? [...log, ...(app?.lines || [])].filter((l) => l.trim()).slice(-25).map((l) => `      | ${l.slice(0, 400)}`) : [];
+  // GTK prints a warning per menu item each time the menu is rebuilt; they hide the useful lines.
+  const tail = fails.length && process.env.CI ? [...log, ...(app?.lines || [])].filter((l) => l.trim() && !/Gtk-WARNING|^\s*\(0x[0-9a-f]+\) for Gtk/.test(l)).slice(-25).map((l) => `      | ${l.slice(0, 400)}`) : [];
   return { pass, fails, tail };
 }
 

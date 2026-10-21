@@ -574,6 +574,7 @@ mod tests {
         assert_eq!(client(srv.port, false, "../evil", b"x", &[]).await["error"], 2);
         assert!(log.lock().unwrap().iter().any(|l| l.contains("outside the TFTP folder")));
         assert_eq!(client(srv.port, true, "missing.bin", &[], &[]).await["error"], 1);
-        assert_eq!(resolve_in_root(Path::new("/srv/tftp"), "ok/file.bin"), Some(PathBuf::from("/srv/tftp/ok/file.bin")));
+        let root = std::env::temp_dir().join("srv").join("tftp");
+        assert_eq!(resolve_in_root(&root, "ok/file.bin"), Some(crate::util::resolve(&root).join("ok").join("file.bin")));
     }
 }

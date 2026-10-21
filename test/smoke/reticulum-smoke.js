@@ -51,6 +51,8 @@ module.exports = async function smoke(win, { store, control }) {
   config(path.join(root, 'files'), { port });
   config(path.join(root, 'client'), { port });
   config(path.join(root, 'exec'), { port });
+  config(path.join(root, 'auth-shell'), { port });
+  config(path.join(root, 'auth-files'), { port });
   const inbox = path.join(root, 'inbox');
   fs.mkdirSync(inbox);
   fs.writeFileSync(path.join(inbox, 'router1.cfg'), 'hostname router1\n');
@@ -59,7 +61,13 @@ module.exports = async function smoke(win, { store, control }) {
     // Each listener gets an identity made with rnid, and its destination hash is computed from
     // it: the newer tools print nothing when their output isn't a terminal.
     const rnid = path.join(bin, 'rnid');
-    const ident = (name) => { const f = path.join(root, `${name}.identity`); spawnSync(rnid, ['-g', f], { encoding: 'utf8' }); return f; };
+    const identities = {};
+    const ident = (name) => {
+      const f = path.join(root, `${name}.identity`);
+      const r = spawnSync(rnid, ['-g', f], { encoding: 'utf8' });
+      identities[f] = (/New identity <([0-9a-f]{32})>/.exec(`${r.stdout}${r.stderr}`) || [])[1];
+      return f;
+    };
     const destOf = (idFile, aspects) => {
       const r = spawnSync(rnid, ['-i', idFile, '-H', aspects], { encoding: 'utf8', timeout: 30000 });
       const m = /destination for this Identity is <([0-9a-f]{32})>/.exec(`${r.stdout}${r.stderr}`);
@@ -69,13 +77,25 @@ module.exports = async function smoke(win, { store, control }) {
     const start = (tool, args) => { const p = spawn(path.join(bin, tool), args, { stdio: 'ignore', env: { ...process.env, PYTHONUNBUFFERED: '1' } }); procs.push(p); return p; };
     // rns 1.x's rnsh takes the Reticulum config as --rnsconfig (-c is its own config); older rnsh uses -c.
     const rnshHelp = spawnSync(path.join(bin, 'rnsh'), ['--help'], { encoding: 'utf8' });
-    const rnshConfig = /--rnsconfig/.test(`${rnshHelp.stdout}${rnshHelp.stderr}`) ? ['--rnsconfig', path.join(root, 'server'), '-c', path.join(root, 'rnsh-server')] : ['-c', path.join(root, 'server')];
+    const newRnsh = /--rnsconfig/.test(`${rnshHelp.stdout}${rnshHelp.stderr}`);
+    const rnshConfigFor = (cfg) => (newRnsh ? ['--rnsconfig', path.join(root, cfg), '-c', path.join(root, `rnsh-${cfg}`)] : ['-c', path.join(root, cfg)]);
+    const rnshConfig = rnshConfigFor('server');
     const shellId = ident('shell');
     const filesId = ident('files');
     const execId = ident('exec');
     start('rnsh', ['-l', ...rnshConfig, '-i', shellId, '-n', '-b', '5', '--', '/bin/sh']);
     start('rncp', ['--config', path.join(root, 'files'), '-i', filesId, '-l', '-n', '-F', '-j', inbox, '-s', inbox, '-b', '5']);
-    start('rnx', ['--config', path.join(root, 'exec'), '-i', execId, '-l', '-n']);
+    // Listeners that only let in one identity (the usual setup), not anyone (-n).
+    const clientId = ident('client');
+    const clientHash = identities[clientId];
+    const authShellId = ident('auth-shell');
+    const authFilesId = ident('auth-files');
+    const authInbox = path.join(root, 'auth-inbox');
+    fs.mkdirSync(authInbox);
+    start('rnsh', ['-l', ...rnshConfigFor('auth-shell'), '-i', authShellId, '-a', clientHash, '-b', '5', '--', '/bin/sh']);
+    start('rncp', ['--config', path.join(root, 'auth-files'), '-i', authFilesId, '-l', '-a', clientHash, '-s', authInbox, '-b', '5']);
+    const authShell = destOf(authShellId, 'rnsh');
+    const authFiles = destOf(authFilesId, 'rncp.receive');
     const shell = { hash: destOf(shellId, 'rnsh') };
     const files = { hash: destOf(filesId, 'rncp.receive') };
     const exec = { hash: destOf(execId, 'rnx.execute') };
@@ -83,6 +103,9 @@ module.exports = async function smoke(win, { store, control }) {
     const transportId = path.join(root, 'server', 'storage', 'transport_identity');
     for (let i = 0; i < 100 && !fs.existsSync(transportId); i++) await sleep(100);
     const probeHash = fs.existsSync(transportId) ? destOf(transportId, 'rnstransport.probe') : '';
+    // rnx announces only once, at start: start it once the transport node is listening.
+    await sleep(2000);
+    start('rnx', ['--config', path.join(root, 'exec'), '-i', execId, '-l', '-n']);
     await sleep(4000); // let the listeners come up and announce
     const HASH = shell.hash;
 
@@ -158,7 +181,9 @@ module.exports = async function smoke(win, { store, control }) {
     await js(`void window.termcraft.dispatch('rnsExec')`);
     await waitModal(/rnx/);
     await answer({ dest: exec.hash, command: 'echo rnx-ok' });
-    check('Run Remote Command (rnx) shows the remote output', await waitScreen(/rnx-ok/));
+    const rnxOk = await waitScreen(/rnx-ok/);
+    check('Run Remote Command (rnx) shows the remote output', rnxOk);
+    if (!rnxOk) console.log('[debug] rnx screen:', JSON.stringify((await screen()).replace(/\s+/g, ' ').slice(-600)));
     await js(`window.termcraft.closeTab(window.termcraft.active, true)`);
     if (probeHash) {
       await js(`void window.termcraft.dispatch('rnsProbe')`);
@@ -205,12 +230,58 @@ module.exports = async function smoke(win, { store, control }) {
     }
     check('Run Commands on an RNSH session saves its output', /batch-4/.test(report) && report.includes(`rnsh ${HASH}`));
 
+    // ---- identities and allow lists ------------------------------------------------------------------
+    const waitState = async (want, ms = 60000) => { for (let i = 0; i < ms / 250; i++) { if (want.test(await js(`window.termcraft.active.state`))) return true; await sleep(250); } return false; };
+    const authSession = await store.saveSession({ name: 'locked node', protocol: 'rnsh', host: authShell, port: 0, reticulum: { identity: clientId, timeout: 30 } });
+    await js(`window.termcraft.reloadTree()`);
+    await js(`void window.termcraft.openSession(window.termcraft.tree.sessions.find((s) => s.id === '${authSession.id}'))`);
+    await waitState(/connected/);
+    for (let i = 0; i < 6 && !(await waitScreen(/auth-ok/, 5000)); i++) await js(`window.termcraft.active.send("echo auth-$((1+0))k | tr 1 o\\r")`);
+    check('a listener that allows only my identity lets the session identity in', /auth-ok/.test(await screen()));
+    await js(`window.termcraft.closeTab(window.termcraft.active, true)`);
+    const strangerId = ident('stranger');
+    await js(`void window.termcraft.openSession({ name: 'stranger', protocol: 'rnsh', host: '${authShell}', port: 0, reticulum: { identity: ${JSON.stringify(strangerId)}, timeout: 20 } })`);
+    for (let i = 0; i < 3; i++) await js(`window.termcraft.active.send("echo should-not-run-$((40+2))\\r")`).catch(() => {});
+    const refused = await waitState(/disconnected|failed/, 70000);
+    check('an identity the listener does not allow is turned away (no remote shell)', refused && !/should-not-run-42/.test(await screen()));
+    await js(`window.termcraft.closeTab(window.termcraft.active, true)`);
+
+    // ---- session options: remote command, logging ----------------------------------------------------
+    const logFile = path.join(root, 'rnsh.log');
+    await js(`void window.termcraft.openSession({ name: 'one command', protocol: 'rnsh', host: '${HASH}', port: 0, reticulum: { command: 'echo remote-command-ok', timeout: 30 }, logging: { enabled: true, path: ${JSON.stringify(logFile)} } })`);
+    check('a session with a remote command runs it instead of a shell', await waitScreen(/remote-command-ok/));
+    await waitState(/disconnected/, 30000);
+    await sleep(300);
+    check('…and the tab closes when it finishes, with the output logged', /remote-command-ok/.test(fs.existsSync(logFile) ? fs.readFileSync(logFile, 'utf8') : ''));
+    await js(`window.termcraft.closeTab(window.termcraft.active, true)`);
+
+    // ---- rncp with the identity from Settings to a listener that allows only it -------------------------
+    await js(`window.termcraft.saveSettings({ reticulum: { identity: ${JSON.stringify(clientId)} } })`);
+    const authFile = path.join(root, 'switch.cfg');
+    fs.writeFileSync(authFile, 'hostname core-sw\n');
+    await control.mockDialogs([authFile]);
+    await js(`void window.termcraft.dispatch('rnsSend')`);
+    await waitModal(/rncp/);
+    await answer({ dest: authFiles });
+    for (let i = 0; i < 150 && !fs.existsSync(path.join(authInbox, 'switch.cfg')); i++) await sleep(200);
+    check('rncp uses the identity set in Settings (accepted by an allow-listed listener)', fs.existsSync(path.join(authInbox, 'switch.cfg')));
+    await js(`window.termcraft.closeTab(window.termcraft.active, true)`);
+    await js(`window.termcraft.saveSettings({ reticulum: { identity: '' } })`);
+
+    // ---- host import --------------------------------------------------------------------------------------
+    const parsed = JSON.parse(await js(`window.api.store.parseHosts(${JSON.stringify(`name,host,protocol\nmesh-a,<${HASH}>,rnsh\nmesh-bad,10.1.1.1,rnsh`)}, {})`));
+    check('Import Hosts reads RNSH rows by destination hash and rejects IPs for them', parsed.rows.length === 1 && parsed.rows[0].host === HASH && parsed.errors.length === 1);
+
     // ---- security ------------------------------------------------------------------------------------------
     check('rncp cannot send a file that was not chosen', /not chosen/.test(await rejected(`window.api.conn.open('evil', { protocol: 'rntool', rntool: { tool: 'send', file: '/etc/hosts', dest: '${files.hash}' } }, 80, 24)`)));
     check('rncp fetch cannot save outside a chosen folder', /Choose the folder/.test(await rejected(`window.api.conn.open('evil2', { protocol: 'rntool', rntool: { tool: 'fetch', remotePath: 'x', saveDir: '/tmp', dest: '${files.hash}' } }, 80, 24)`)));
     // A tool tab that names some other program fails to start (the backend runs only Reticulum's).
     await js(`void window.termcraft.openSession({ name: 'evil', protocol: 'rntool', rntool: { tool: 'bash' } })`);
     check('only Reticulum programs can be started', await waitScreen(/Unknown Reticulum tool/, 5000));
+    // ---- turning it off again -----------------------------------------------------------------------------
+    await js(`window.termcraft.saveSettings({ reticulum: { enabled: false } })`);
+    await js(`void window.termcraft.openSession({ name: 'off again', protocol: 'rnsh', host: '${HASH}', port: 0 })`);
+    check('turning Reticulum off stops RNSH sessions again', await waitScreen(/Reticulum is turned off/, 10000));
   } finally {
     for (const p of procs) p.kill('SIGKILL'); // rncp ignores SIGTERM
     await sleep(500);

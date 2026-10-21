@@ -34,8 +34,13 @@ module.exports = async function smoke(win) {
   // Keystrokes sent one at a time, as fast as possible, arrive in order.
   const typed = Array.from({ length: 60 }, (_, i) => String.fromCharCode(97 + (i % 26))).join('');
   await js(`(() => { const id = window.termcraft.active.id; for (const ch of "echo ORDER-${typed}\\r") window.api.conn.write(id, ch); })()`);
-  await sleep(800);
-  check('fast keystrokes reach the shell in order', (await js(`window.termcraft.active.screenLines().join('\\n')`)).includes(`ORDER-${typed}`));
+  // The echoed line can wrap on a narrow terminal, so rows are joined without line breaks.
+  let ordered = false;
+  for (let i = 0; i < 50 && !ordered; i++) {
+    await sleep(200);
+    ordered = (await js(`window.termcraft.active.screenLines().join('')`)).includes(`ORDER-${typed}`);
+  }
+  check('fast keystrokes reach the shell in order', ordered);
   await shot('02-local-shell');
 
   // Second tab + tiling.

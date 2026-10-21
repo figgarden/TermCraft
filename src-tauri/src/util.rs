@@ -243,6 +243,7 @@ mod tests {
 
     #[test]
     fn resolve_normalizes() {
-        assert_eq!(resolve("/a/b/../c/./d"), PathBuf::from("/a/c/d"));
+        let base = resolve(std::env::temp_dir());
+        assert_eq!(resolve(base.join("a/b/../c/./d")), base.join("a").join("c").join("d"));
     }
 }

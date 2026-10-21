@@ -93,6 +93,7 @@ module.exports = async function smoke(win, { control }) {
     check('"Always Allow" is remembered for that exact command', (await control.boxCalls()).length === 3);
     const missing = 'no-such-program-termcraft';
     await js(`window.api.store.saveSettings({ buttonBars: [{ id: 'evil', name: 'Evil', buttons: [{ label: 'x', action: 'run', value: '${missing}' }] }] })`);
+    await answer('once');
     check('missing program reports an error', (await js(`window.api.app.run('${missing}').then(() => '', (e) => e.message)`)).includes('Program not found'));
   }
 

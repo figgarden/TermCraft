@@ -344,6 +344,7 @@ mod tests {
     #[test]
     fn tool_arguments_keep_values_out_of_options() {
         let s = settings();
+        let file = std::env::temp_dir().join("a.cfg").to_string_lossy().into_owned();
         assert_eq!(args_of(tool_argv(&json!({ "tool": "status", "all": true }), &s)), vec!["--config", "/etc/rns", "-a"]);
         assert_eq!(args_of(tool_argv(&json!({ "tool": "path", "dest": H }), &s)), vec!["--config", "/etc/rns", "-w", "30", "--", H]);
         assert_eq!(
@@ -352,8 +353,8 @@ mod tests {
         );
         assert!(tool_argv(&json!({ "tool": "probe", "dest": H, "fullName": "x; rm -rf ~" }), &s).is_err());
         assert_eq!(
-            args_of(tool_argv(&json!({ "tool": "send", "dest": H, "file": "/tmp/a.cfg" }), &s)),
-            vec!["--config", "/etc/rns", "-w", "30", "--", "/tmp/a.cfg", H]
+            args_of(tool_argv(&json!({ "tool": "send", "dest": H, "file": file.as_str() }), &s)),
+            vec!["--config", "/etc/rns", "-w", "30", "--", file.as_str(), H]
         );
         assert!(tool_argv(&json!({ "tool": "send", "dest": H, "file": "--listen" }), &s).is_err());
         assert_eq!(
