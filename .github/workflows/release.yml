@@ -56,6 +56,9 @@ jobs:
       - name: Build installers
         shell: bash
         run: |
+          # The Tauri CLI wants frontendDist to exist up front; build.rs fills it while compiling.
+          # (Elsewhere `npm test` already made it; mac-x64 skips the tests.)
+          mkdir -p src-tauri/web
           if [ "$RUNNER_OS" = "macOS" ]; then
             # The .dmg step scripts Finder, which hosted runners allow.
             cargo tauri build --target ${{ matrix.target }} --bundles app,dmg
